@@ -36,3 +36,4 @@ history, which is more than opaque memory would offer.
 
 | Date | Range reviewed | Verdict | Findings | Notes |
 |---|---|---|---|---|
+| 2026-08-29 | `b1626f2..HEAD` (the review agent's own construction) | no verdict returned | 8 raised, 7 confirmed | Findings under items 1, 3, 9, 10. One claim (`context: fork` inherits conversation history) checked against the live docs and found wrong. The agent did not emit a VERDICT line, a tally, or the rubric table -- a defect in the agent, recorded here rather than smoothed over. |
