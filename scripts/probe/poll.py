@@ -195,15 +195,40 @@ class FeedProbe:
         # actually achieved rather than the one we configured.
         self.request_starts: list[float] = []
 
-    def _conditional_headers(self, probe_action: str) -> tuple[dict, str]:
+    def _plan_request(self, probe_action: str) -> tuple[str, bool]:
+        """Choose the method, and say whether this request exists for its body.
+
+        HEAD mode: Last-Modified, ETag and Content-Length carry the cadence
+        signal at zero body cost. gtfs.de ships ~40 MB uncompressed per GET, so
+        tracking its ~29s regeneration by GET alone would move several GB an
+        hour from a volunteer service. Periodic full GETs still feed the tests
+        that need a body, and a Test C re-poll is always a GET because it is
+        defined as comparing two.
+        """
+        method = self.cfg.get("method", "GET").upper()
+        every_n = self.cfg.get("full_get_every_n")
+
+        if probe_action.startswith("async_repoll"):
+            return "GET", True
+        if method == "HEAD" and every_n and (self.seq + 1) % every_n == 0:
+            return "GET", True
+        return method, False
+
+    def _conditional_headers(self, wants_body: bool) -> tuple[dict, str]:
         """Rotate which validators we send, so we learn which one is honoured.
 
-        Test C is exempt. It is defined as comparing two *bodies*, and a 304
-        has none -- so sending validators on a re-poll destroys the test rather
-        than economising on it. Run 1 lost Test C on two of three feeds exactly
-        this way: both re-polls returned 304 and produced no usable pair.
+        Any request whose purpose is to OBTAIN A BODY is exempt: a 304 has
+        none, so sending validators does not economise on such a request, it
+        defeats it. That covers Test C re-polls and the periodic full GETs that
+        punctuate HEAD mode.
+
+        Both cases were observed failing. Run 1 lost Test C on two of three
+        feeds because the re-polls returned 304. Run 1b's first scheduled GET
+        returned 304 for the same reason -- in HEAD mode every HEAD refreshes
+        the stored validator, so a GET asking for a body is certain to be told
+        it already has one.
         """
-        if probe_action.startswith("async_repoll"):
+        if wants_body:
             return {}, "none"
 
         send_inm = self.etag is not None
@@ -231,25 +256,14 @@ class FeedProbe:
         return headers, mode
 
     async def fetch(self, client: httpx.AsyncClient, probe_action: str) -> dict:
-        conditional_headers, conditional_mode = self._conditional_headers(probe_action)
+        method, wants_body = self._plan_request(probe_action)
+        conditional_headers, conditional_mode = self._conditional_headers(wants_body)
 
         # The joined URL is built here and never recorded. Endpoints reach the
         # manifest split into base_url + redacted query.
         url = self.cfg["base_url"]
         params = self.cfg.get("query") or None
 
-        # HEAD mode: Last-Modified, ETag and Content-Length carry the cadence
-        # signal at zero body cost. gtfs.de ships ~40 MB uncompressed per GET,
-        # so tracking its ~29s regeneration by GET alone would move several GB
-        # an hour from a volunteer service. Periodic full GETs still feed the
-        # tests that need a body, and a Test C re-poll is always a GET because
-        # it is defined as comparing two bodies.
-        method = self.cfg.get("method", "GET").upper()
-        every_n = self.cfg.get("full_get_every_n")
-        if probe_action.startswith("async_repoll"):
-            method = "GET"
-        elif method == "HEAD" and every_n and (self.seq + 1) % every_n == 0:
-            method = "GET"
 
         await self.limiter.acquire()
 

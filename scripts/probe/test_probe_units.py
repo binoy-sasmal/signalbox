@@ -79,21 +79,50 @@ class TestConditionalHeadersOnRePoll(unittest.TestCase):
         probe.last_modified = "Fri, 28 Aug 2026 12:00:00 GMT"
         return probe
 
+    def _plan_and_headers(self, probe_action: str):
+        probe = self._probe()
+        method, wants_body = probe._plan_request(probe_action)
+        headers, mode = probe._conditional_headers(wants_body)
+        return method, wants_body, headers, mode
+
     def test_scheduled_requests_do_send_validators(self):
-        headers, mode = self._probe()._conditional_headers("scheduled")
+        _, _, headers, mode = self._plan_and_headers("scheduled")
         self.assertIn("If-None-Match", headers)
         self.assertIn("If-Modified-Since", headers)
         self.assertNotEqual("none", mode)
 
-    def test_repoll_a_sends_no_validators(self):
-        headers, mode = self._probe()._conditional_headers("async_repoll_a")
-        self.assertEqual({}, headers)
-        self.assertEqual("none", mode)
+    def test_repoll_sends_no_validators_and_is_a_get(self):
+        for action in ("async_repoll_a", "async_repoll_b"):
+            with self.subTest(action=action):
+                method, wants_body, headers, mode = self._plan_and_headers(action)
+                self.assertEqual("GET", method)
+                self.assertTrue(wants_body)
+                self.assertEqual({}, headers)
+                self.assertEqual("none", mode)
 
-    def test_repoll_b_sends_no_validators(self):
-        headers, mode = self._probe()._conditional_headers("async_repoll_b")
-        self.assertEqual({}, headers)
-        self.assertEqual("none", mode)
+    def test_head_mode_polls_with_head_and_validators(self):
+        probe = self._probe()
+        probe.cfg["method"] = "HEAD"
+        probe.cfg["full_get_every_n"] = 60
+        method, wants_body = probe._plan_request("scheduled")
+        self.assertEqual("HEAD", method)
+        self.assertFalse(wants_body)
+
+    def test_periodic_full_get_sends_no_validators(self):
+        """Regression: run 1b's first scheduled GET returned 304 and no body.
+
+        In HEAD mode every HEAD refreshes the stored validator, so a GET whose
+        entire purpose is to obtain a body is certain to be told it already has
+        one. A request that exists for its body must not ask to be told no.
+        """
+        probe = self._probe()
+        probe.cfg["method"] = "HEAD"
+        probe.cfg["full_get_every_n"] = 6
+        probe.seq = 5  # next request is the 6th
+        method, wants_body = probe._plan_request("scheduled")
+        self.assertEqual("GET", method)
+        self.assertTrue(wants_body)
+        self.assertEqual({}, probe._conditional_headers(wants_body)[0])
 
 
 class TestNyquistGuard(unittest.TestCase):
