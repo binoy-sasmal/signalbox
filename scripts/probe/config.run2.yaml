@@ -1,0 +1,165 @@
+# Stage 0 feed probe -- run 2: one clean hour, four endpoints, no API key.
+#
+# HSL turned out keyless (metrics.md, verified 2026-08-28), so the three feeds
+# that can close Gate 0 need no credential at all. opentransportdata.swiss is
+# deferred to a later run: it is still the only candidate that forces real
+# per-tenant secret handling and a real rate limiter, but it is no longer on
+# the critical path.
+#
+# gtfs.de is absent deliberately. It is characterised and excluded as a tenant
+# on measured resource grounds -- 42 MB uncompressed per fetch against a 30s
+# cadence. See docs/metrics.md.
+
+run: run2
+duration_minutes: 60
+
+user_agent: "signalbox-probe/0.1 (Stage 0 feed feasibility spike; contact: binoysasmal@yahoo.com)"
+accept_encoding: "gzip, deflate"
+
+kill_switch_file: "STOP"
+output_root: "runs"
+
+timeouts:
+  connect_s: 5
+  # Largest payload here is ovapi at ~1.9 MB wire. gtfs.de's 27s fetches are
+  # not in this run, so the 60s ceiling it needed is unnecessary.
+  total_s: 30
+
+# Test C on all four: every feed is keyless, so none is budget-constrained the
+# way CH will be. Re-polls send no validators and are always full GETs -- a 304
+# has no body and Test C compares two.
+async_repoll:
+  gap_seconds: 2
+  at_minutes: [15, 40]
+
+backoff:
+  cap_seconds: 900
+  consecutive_429_to_stop: 3
+
+static_content_guard:
+  min_median_entities: 10
+  min_median_semantic_churn: 0.05
+
+# ---------------------------------------------------------------------------
+# STAGE 2 QUESTION, FLAGGED NOT DECIDED
+#
+# hsl_tripupdates and hsl_vehiclepositions are separate feed ids drawn from the
+# same provider, on the same host, under one licence. This is the first case in
+# the probe of two endpoints sharing an upstream, and it raises a tenancy
+# question the schema does not currently answer:
+#
+#   Is HSL one tenant with two ingest pipelines, or two tenants?
+#
+# It matters because the answer decides what a tenant *is* -- a data source or
+# an endpoint -- and therefore what quotas, NetworkPolicies, dashboards and
+# licence fields attach to. One tenant with two pipelines shares a licence,
+# an attribution string and a rate-limit budget against a common origin; two
+# tenants duplicate all three and can drift apart.
+#
+# Do not decide this here. Stage 0's job is to observe whether the two endpoints
+# behave alike -- cadence, stamping, validator honouring, entity identity -- and
+# that evidence should inform the Stage 2 decision rather than a preference
+# expressed before the data exists.
+# ---------------------------------------------------------------------------
+
+feeds:
+  - id: vbb
+    base_url: "https://production.gtfsrt.vbb.de/data"
+    query: {}
+    auth: none
+    sleep_after_completion_s: 5
+    documented_limit: {requests: 60, window_s: 60}
+    self_imposed_ceiling: {requests: 15, window_s: 60}
+    async_repoll: true
+    licence: "CC-BY-4.0"
+    attribution: "VBB"
+    licence_checked: "2026-08-28"
+    notes: >-
+      Run 1 achieved a 5.12s interval against a 16s cadence, comfortably above
+      Nyquist, so this is the one feed whose cadence is already a measured
+      property rather than a sampling artefact. Degraded since 2026-06-04: its
+      64% 304 rate is inflated by a frozen upstream and is not a clean
+      bytes-saved figure.
+
+  - id: ovapi_tripupdates
+    base_url: "https://gtfs.ovapi.nl/nl/tripUpdates.pb"
+    query: {}
+    auth: none
+    sleep_after_completion_s: 60
+    documented_limit: null
+    self_imposed_ceiling: {requests: 2, window_s: 60}
+    async_repoll: true
+    licence: unresolved
+    attribution: unresolved
+    licence_sources:
+      - "http://gtfs.ovapi.nl/README"
+      - "https://mobilitydatabase.org/feeds/gtfs_rt/mdb-1645"
+    licence_checked: "2026-08-28"
+    licence_status: >-
+      Use explicitly permitted by the README; no SPDX identifier and no required
+      attribution string for general use. Email to ovinfo@ovapi.nl outstanding.
+    notes: >-
+      60s answers the open question about this feed -- whether validators are
+      honoured -- because a GET with validators is what detects a false-200, and
+      run 1 saw 0% 304 with one false-200 across only 16 requests. 60 samples
+      settles it. ACCEPTED TRADE: at 60s the cadence stays below Nyquist and
+      will again be flagged unresolved. Resolving it would need either far more
+      GETs from a volunteer service, or HEAD sampling that cannot detect a
+      false-200. Gate 0 does not depend on it.
+
+  # --- same provider, same host, two feed ids: see the Stage 2 note above ---
+
+  - id: hsl_tripupdates
+    base_url: "https://realtime.hsl.fi/realtime/trip-updates/v2/hsl"
+    query: {}
+    auth: none
+    sleep_after_completion_s: 5
+    documented_limit: null
+    self_imposed_ceiling: {requests: 15, window_s: 60}
+    async_repoll: true
+    licence: unverified
+    attribution: unverified
+    licence_sources:
+      - "https://www.hsl.fi/en/hsl/open-data"
+      - "https://digitransit.fi/en/developers/apis/7-terms-of-use/"
+    licence_checked: "2026-08-28"
+    licence_status: >-
+      CC BY 4.0 indicated but NOT verified. Digitransit's terms state CC BY but
+      are scoped to registered api.digitransit.fi usage, which is the deprecated
+      path this endpoint replaces; hsl.fi returns HTTP 403 to automated fetch so
+      the primary source could not be read. Not a blocker for probing. IS a
+      blocker for onboarding as a tenant.
+    notes: >-
+      Documented 15s cadence, 1.27 MB. 5s sampling puts Nyquist at 10s, below
+      the documented cadence, so unlike gtfs.de this feed's cadence should
+      resolve. Worst case if validators are ignored is ~914 MB/hour; ETag,
+      Last-Modified and Cache-Control max-age=5 are all present, so most
+      responses should be 304 and the real figure far lower.
+
+  - id: hsl_vehiclepositions
+    base_url: "https://realtime.hsl.fi/realtime/vehicle-positions/v2/hsl"
+    query: {}
+    auth: none
+    sleep_after_completion_s: 2
+    documented_limit: null
+    self_imposed_ceiling: {requests: 35, window_s: 60}
+    async_repoll: true
+    licence: unverified
+    attribution: unverified
+    licence_sources:
+      - "https://www.hsl.fi/en/hsl/open-data"
+      - "https://digitransit.fi/en/developers/apis/7-terms-of-use/"
+    licence_checked: "2026-08-28"
+    licence_status: >-
+      Same as hsl_tripupdates: CC BY 4.0 indicated, not verified.
+    notes: >-
+      The high-frequency shape. Documented 1s cadence at 122 KB, a workload
+      unlike anything characterised so far (vbb 16s, ovapi <=60s, gtfs.de 30s),
+      and the only candidate that will actually exercise a bounded queue before
+      Gate 5 designs its backpressure.
+      KNOWN LIMIT, recorded up front: 2s sampling puts Nyquist at 4s, so a
+      genuine 1s cadence CANNOT be resolved and the analyser will correctly flag
+      it. Resolving 1s would need sustained 2+ requests/second for an hour,
+      which is not a reasonable ask of a public API. The measurable claim is
+      "updates at least every 2s", read off the 200-vs-304 pattern, and that is
+      sufficient to size a queue. Worst case ~220 MB/hour.
