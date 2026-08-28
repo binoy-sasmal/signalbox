@@ -1,0 +1,188 @@
+{
+  "run": "run1b",
+  "synthetic": false,
+  "analysed_at": "2026-08-28T12:27:33.273175+02:00",
+  "clock": {
+    "ntp_server": "pool.ntp.org",
+    "syncs": [
+      {
+        "label": "start",
+        "at": "2026-08-28T09:17:29.093460+00:00",
+        "offset_ms": -960.8871936798096,
+        "sync_failed": false,
+        "detail": null
+      },
+      {
+        "label": "mid",
+        "at": "2026-08-28T09:47:29.358460+00:00",
+        "offset_ms": -946.1588859558105,
+        "sync_failed": false,
+        "detail": null
+      },
+      {
+        "label": "end",
+        "at": "2026-08-28T10:17:36.499460+00:00",
+        "offset_ms": null,
+        "sync_failed": true,
+        "detail": "NTPException: No response received from pool.ntp.org."
+      }
+    ],
+    "note": "Offsets are recorded, not applied. null means sync failed; never read as zero."
+  },
+  "feeds": [
+    {
+      "feed": "gtfs_de",
+      "requests": 351,
+      "status_distribution": {
+        "200": 123,
+        "304": 228
+      },
+      "methods": {
+        "HEAD": 342,
+        "GET": 9
+      },
+      "conditional_requests": {
+        "sent_with_validator": 346,
+        "returned_304": 228,
+        "not_modified_rate": 0.659,
+        "honoured_by_mode": {
+          "if-none-match+if-modified-since": 213,
+          "if-none-match": 9,
+          "if-modified-since": 6
+        },
+        "false_200_identical_body": 0,
+        "note": "false_200 = a 200 whose body hash equals the previous body's. The server advertises validators it does not honour; Gate 5's bytes-saved claim rests here."
+      },
+      "cadence": {
+        "distinct_header_timestamps": 1,
+        "delta_p50_s": null,
+        "delta_p95_s": null,
+        "delta_min_s": null,
+        "delta_max_s": null,
+        "note": "async re-poll fetches excluded; they would corrupt this distribution",
+        "sampling": {
+          "effective_interval_s": 10.09,
+          "nyquist_limit_s": 20.18,
+          "undersampled": null
+        }
+      },
+      "last_modified_cadence": {
+        "distinct_values": 120,
+        "delta_p50_s": 30.0,
+        "delta_min_s": 25.0,
+        "delta_max_s": 36.0,
+        "note": "Derived from Last-Modified, so HEAD requests contribute. Independent of FeedHeader.timestamp and of payload cost.",
+        "sampling": {
+          "effective_interval_s": 10.09,
+          "nyquist_limit_s": 20.18,
+          "grid_multiple_fraction": 0.479,
+          "below_nyquist": false,
+          "undersampled": false
+        }
+      },
+      "effective_interval_s": 10.09,
+      "payload_bytes": {
+        "wire_p50": 40618276,
+        "wire_p95": null,
+        "wire_max": 41030905,
+        "wire_total": 201463627,
+        "decompressed_p50": 40618276,
+        "decompressed_max": 41030905,
+        "note": "decompressed = post-transport-decompression wire bytes. Protobuf 'decoded size' is not a meaningful byte count and is not recorded."
+      },
+      "entities": {
+        "counts_total": {
+          "trip_update": 84988,
+          "alert": 99155
+        },
+        "median_per_snapshot": 178942
+      },
+      "parse": {
+        "classes": {
+          "ok": 5
+        },
+        "failure_rate": 0.0,
+        "gtfs_realtime_version": "2.0",
+        "incrementality": "FULL_DATASET"
+      },
+      "churn": {
+        "median_churn_keyed_on_entity_id": null,
+        "median_churn_keyed_on_semantic_key": null,
+        "median_key_persistence_entity_id": null,
+        "median_key_persistence_semantic": null,
+        "comparisons": 0,
+        "note": "Churn answers how much write load a snapshot creates. Key persistence answers what dedup can key on, and is measured directly because a producer that restamps every entity saturates both churn figures and leaves their difference uninformative."
+      },
+      "header_timestamp": {
+        "verdict": "generation",
+        "rationale": "unanimous across 2 available test(s): C_async_repoll, E_http_date_last_modified",
+        "static_content_guard_triggered": false,
+        "votes": {
+          "A_body_modulo_timestamp": "unavailable",
+          "B_lag_shape": "unavailable",
+          "C_async_repoll": "generation",
+          "D_entity_timestamps": "unavailable",
+          "E_http_date_last_modified": "generation"
+        },
+        "detail": {
+          "A_body_modulo_timestamp": {
+            "verdict": "unavailable",
+            "reason": "fewer than two decoded snapshots"
+          },
+          "B_lag_shape": {
+            "verdict": "unavailable",
+            "reason": "no measurable cadence"
+          },
+          "C_async_repoll": {
+            "verdict": "generation",
+            "pairs": [
+              {
+                "header_ts_delta_s": 0,
+                "request_gap_s": 9.688,
+                "tracks_request_time": false
+              },
+              {
+                "header_ts_delta_s": 0,
+                "request_gap_s": 16.641,
+                "tracks_request_time": false
+              }
+            ],
+            "sample_size": 2,
+            "reason": "same snapshot returned the same timestamp"
+          },
+          "D_entity_timestamps": {
+            "verdict": "unavailable",
+            "entity_ts_coverage": 0.0,
+            "reason": "entity timestamps absent or too sparse"
+          },
+          "E_http_date_last_modified": {
+            "median_abs_delta_vs_date_s": 32.0,
+            "median_abs_delta_vs_last_modified_s": 4.0,
+            "separation_ratio_required": 2.0,
+            "noise_floor_s": 1.0,
+            "verdict": "generation",
+            "reason": "header timestamp tracks Last-Modified far more closely than Date"
+          }
+        }
+      },
+      "availability": {
+        "downtime_runs": [],
+        "longest_consecutive_failures": 0,
+        "note": "Observed within the run window only. An hour supports no availability figure and none is reported."
+      },
+      "capture_gaps": [
+        {
+          "from": "2026-08-28T09:57:49.187460+00:00",
+          "to": "2026-08-28T09:58:23.312460+00:00",
+          "seconds": 34.1
+        }
+      ],
+      "memory": {
+        "single_message_decode_peak_bytes": 359348548,
+        "process_peak_rss_bytes": 1337233408,
+        "measured_on": "CPython 3.12.5 / Windows AMD64",
+        "note": "Indicative, not equal to an arm64 Linux container. Gate 5 sizing method: single-message decode peak x queue depth x safety factor, corrected at Gate 7 from container_memory_working_set_bytes. Re-run this inside a Linux container so architecture is the only remaining confound."
+      }
+    }
+  ]
+}

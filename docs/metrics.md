@@ -39,16 +39,13 @@ one: gtfs.de was configured at 5s and achieved 17.8s because each 40 MB fetch to
 VBB's cadence was sampled fast enough to be a property of the feed. The other two are our sampling
 grid and are **not** recorded as feed cadences.
 
-**gtfs.de measured cadence, by HEAD:** deltas of **29s, 33s, 26s** across nine HEAD requests. The
-documented figure is 10s ("Er wird alle 10 Sekunden aktualisiert"). **The measured ~29s is the
-number that counts here.** HEAD is supported and returns `Last-Modified`, `ETag` and
-`Content-Length` at zero body cost.
+**gtfs.de's cadence was resolved separately in run 1b**, by HEAD, at 10s sampling — see below.
 
 #### Payload and transport
 
 | Feed | Wire per fetch | Decompressed | `Content-Encoding` |
 |---|---|---|---|
-| gtfs_de | **37.2 – 48.1 MB** | same | **none** |
+| gtfs_de | **38.0 – 54.3 MB** (p50 42.0 MB, n=123) | same | **none** |
 | vbb | 2.03 MB | 9.39 MB | gzip |
 | ovapi_tripupdates | 1.93 MB | 5.74 MB | gzip |
 
@@ -64,13 +61,45 @@ it stays visible. HTTP `Date` alone, at 1-second resolution, could not have dete
 
 ---
 
+### Run 1b — 2026-08-28, gtfs.de by HEAD, full hour
+
+Run 1 could not resolve gtfs.de's cadence at any affordable GET rate. Run 1b sampled `Last-Modified`
+by HEAD every 10s, punctuated by a small number of full GETs for the tests that need a payload.
+
+**59.9 minutes, 351 requests, 201.5 MB.** 342 HEAD, 9 GET. 120 generations observed.
+
+| | |
+|---|---|
+| **Cadence (Last-Modified)** | **p50 30.0s**, p95 34s, min 25s, max 36s, stdev 2.0s, n=119 |
+| Sampling | 10.09s achieved interval, Nyquist limit 20.18s → **resolvable, not flagged** |
+| Payload | 38.0 – 54.3 MB, p50 42.0 MB (n=123 `Content-Length` observations) |
+| 304 rate | 65.9% |
+| Entities | 178,942 median |
+| Header timestamp | **generation** — Tests C and E, both available |
+| Parse failures | 0% |
+
+Three things this run confirmed beyond the cadence:
+
+- **Test C worked.** Run 1 lost it on this feed because the re-polls returned 304; with validators
+  suppressed on body-seeking requests, the pair returned two payloads and voted `generation`. The
+  fix is verified against the feed that exposed the bug.
+- **A real NTP failure was recorded correctly.** The end-of-run sync failed and the manifest holds
+  `offset_ms: null, sync_failed: true` — not zero. The rule earned its place on live data rather
+  than in a test.
+- **Sleep-after-completion only bites when fetches are slow.** Configured 10s achieved 10.09s here,
+  against 5s achieving 17.8s in GET mode. Recorded in ADR 0005.
+
+---
+
 ### Findings
 
 #### Vendor documentation was wrong about cadence by 3×, and this generalises
 
-**gtfs.de documents 10-second updates and delivers ~30.** Measured by HEAD against `Last-Modified`:
-p50 **30s**, min 26s, max 34s. The documented figure is unambiguous — *"Er wird alle 10 Sekunden
-aktualisiert"* — and it is off by a factor of three.
+**gtfs.de documents 10-second updates and delivers 30.** Measured across a full hour by HEAD against
+`Last-Modified`, 119 intervals: **p50 30.0s, p95 34s, min 25s, max 36s, stdev 2.0s**. The documented
+figure is unambiguous — *"Er wird alle 10 Sekunden aktualisiert"* — and it is off by a factor of
+three. The feed is not erratic; it is reliably three times slower than advertised, which is worse,
+because an erratic feed would have been noticed.
 
 This is the single most transferable finding in Stage 0, and it is **not** about the feed we are
 dropping. It applies to every tenant we will ever onboard:
@@ -81,33 +110,33 @@ dropping. It applies to every tenant we will ever onboard:
 - **It would have been wrong in the safe-looking direction.** Documentation understating cadence
   makes a system look worse than it is; overstating it makes an alert threshold too loose to fire.
   Neither is detectable without measuring.
-- **The measurement was nearly free.** Nine HEAD requests, zero body bytes, established it in 80
-  seconds — against a GET-based approach that spent 1.2 GB and still could not resolve the cadence,
-  because 17.8s sampling cannot see a 30s period.
+- **The measurement was nearly free.** A full hour of HEAD sampling cost **201.5 MB**, essentially
+  all of it the handful of deliberate full GETs; the HEADs themselves moved no body bytes at all.
+  The GET-based approach spent **1.2 GB in 16 minutes** and still could not resolve the cadence,
+  because 17.8s sampling cannot see a 30s period. Cheaper *and* correct, which is not the usual
+  trade.
 
 Consequence, recorded in ADR 0002: **provisional SLO targets are set from measured cadence per
 tenant, never from a provider's stated figure**, and the measured value is re-derived at onboarding
 rather than assumed to hold. The plan already said targets recalibrate after two weeks of real data;
 this says the *starting* target may not come from documentation either.
 
-
-
 #### gtfs.de is characterised and **excluded as a tenant**, on measured resource grounds
 
 Not a gap in the probe. A documented rejection with arithmetic behind it.
 
-- **Bandwidth.** 40 MB uncompressed per fetch against a measured ~29s cadence. Tracking it at a
-  2× oversample is ~240 fetches/hour ≈ **9.6 GB/hour**; merely keeping up, ~124 fetches/hour ≈
-  **5 GB/hour**. Continuous and unattended, from a sponsored volunteer service.
-- **Slowing down does not rescue it.** At 5-minute polling the traffic is still ~350 GB/month, *and*
-  freshness becomes meaningless against a sub-minute upstream. Both properties fail together.
-- **Storage and write load.** 163,819 entities per snapshot, roughly twice a minute, into a single
-  Postgres instance shared with every other tenant on a 12 GB node.
+- **Bandwidth.** 42 MB uncompressed per fetch (p50; up to 54.3 MB) against a measured 30s cadence.
+  Tracking it at a 2× oversample is 240 fetches/hour ≈ **10.1 GB/hour**; merely keeping up, 120
+  fetches/hour ≈ **5.0 GB/hour**. Continuous and unattended, from a sponsored volunteer service.
+- **Slowing down does not rescue it.** At 5-minute polling the traffic is still ~363 GB/month, *and*
+  freshness becomes meaningless against a 30s upstream. Both properties fail together.
+- **Storage and write load.** 178,942 entities per snapshot, twice a minute, into a single Postgres
+  instance shared with every other tenant on a 12 GB node.
 - **Licence is clean** — CC BY-SA 4.0, attribution `gtfs.de`, checked 2026-08-28 — so the exclusion
   is purely a resource decision, not a legal one.
 
-Recorded in `docs/limits.md` and PLAN.md section 9 as a limit **discovered by measurement**, not
-assumed.
+Recorded in PLAN.md section 9 as a limit **discovered by measurement**, not assumed. (`docs/limits.md`
+does not exist yet; PLAN.md section 9 is its source text and carries this.)
 
 #### VBB's 304 rate is inflated by its own degradation
 
@@ -158,7 +187,7 @@ Against the criteria in PLAN.md section 6.6, written before any of these numbers
 |---|---|---|---|---|---|---|
 | vbb | yes (0%) | yes — cadence resolvable | yes, with the degradation caveat | **yes** | yes | **yes** |
 | ovapi_tripupdates | yes (0%) | partial — undersampled, reason recorded | **no** — 16 requests, unresolved | **not yet** | yes | pending |
-| gtfs_de | yes (0%) | yes — ~29s by HEAD | yes | characterised, **excluded on resource grounds** | yes | n/a |
+| gtfs_de | yes (0%) | yes — 30s by HEAD, n=119 | yes | characterised, **excluded on resource grounds** | yes | n/a |
 
 **One feed clears the ingest bar.** Gate 0 requires three. The third and fourth come from run 2 with
 the CH and FI keys; registration is a day or two, not a blocker. No fourth keyless feed will be
@@ -170,7 +199,6 @@ reached for to make the number up.
 
 - Run 2: opentransportdata.swiss (CH) and HSL (FI) — both need API keys.
 - OVapi conditional-request behaviour over a full hour.
-- gtfs.de `Last-Modified` cadence distribution over a full hour (run 1b, HEAD-based).
 - Ingest memory sizing: single-message decode peak × queue depth × safety factor, to be measured in
   a Linux container so architecture is the only remaining confound.
 - Everything from Stage 1 onward: rebuild drill time, onboarding manual-step count, Prometheus

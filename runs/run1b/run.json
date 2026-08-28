@@ -1,0 +1,65 @@
+{
+  "run": "run1b",
+  "status": "complete",
+  "started_at": "2026-08-28T09:17:29.062460+00:00",
+  "ended_at": "2026-08-28T10:17:36.499460+00:00",
+  "observation_count": 351,
+  "user_agent": "signalbox-probe/0.1 (Stage 0 feed feasibility spike; contact: selil23188@archifun.com)",
+  "clock": {
+    "ntp_server": "pool.ntp.org",
+    "syncs": [
+      {
+        "label": "start",
+        "at": "2026-08-28T09:17:29.093460+00:00",
+        "offset_ms": -960.8871936798096,
+        "sync_failed": false,
+        "detail": null
+      },
+      {
+        "label": "mid",
+        "at": "2026-08-28T09:47:29.358460+00:00",
+        "offset_ms": -946.1588859558105,
+        "sync_failed": false,
+        "detail": null
+      },
+      {
+        "label": "end",
+        "at": "2026-08-28T10:17:36.499460+00:00",
+        "offset_ms": null,
+        "sync_failed": true,
+        "detail": "NTPException: No response received from pool.ntp.org."
+      }
+    ],
+    "note": "Offsets are recorded, not applied. null means sync failed; never read as zero."
+  },
+  "platform": {
+    "python": "3.12.5 (tags/v3.12.5:ff3bc82, Aug  6 2024, 20:45:27) [MSC v.1940 64 bit (AMD64)]",
+    "platform": "win32",
+    "sleep_suppressed": true
+  },
+  "feeds": [
+    {
+      "id": "gtfs_de",
+      "base_url": "https://realtime.gtfs.de/realtime-free.pb",
+      "query": {},
+      "auth": "none",
+      "sleep_after_completion_s": 10,
+      "effective_interval_s": 10.09,
+      "documented_limit": null,
+      "self_imposed_ceiling": {
+        "requests": 10,
+        "window_s": 60
+      },
+      "requests_made": 351,
+      "bytes_wire_total": 201463627,
+      "bytes_decompressed_total": 201463627,
+      "status_counts": {
+        "200": 123,
+        "304": 228
+      },
+      "stopped_reason": null,
+      "final_ceiling_requests": 10,
+      "notes": "10s HEAD sampling against a measured ~29s cadence is a ~3x oversample, so the Last-Modified cadence is resolvable where the run-1 GET cadence was not (17.8s achieved interval against a 30s observed cadence, under Nyquist). Documented cadence is 10s; measured is ~29s, and the measured figure is the one that goes in metrics.md."
+    }
+  ]
+}
