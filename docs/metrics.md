@@ -91,6 +91,42 @@ Three things this run confirmed beyond the cadence:
 
 ---
 
+### HSL (FI) — resolved 2026-08-28, **no API key required**
+
+Checked before committing to a registration, and it reorders the critical path.
+
+`api.digitransit.fi` **does require registration and a `digitransit-subscription-key`** — but its
+GTFS-RT endpoints are **deprecated**: *"GTFS-RT APIs (service alerts and trip updates) hosted at
+api.digitransit.fi have been deprecated."* The replacement is a different host, `realtime.hsl.fi`,
+and its documentation states no authentication requirement.
+
+Verified empirically with one zero-body HEAD per endpoint — all 200, no auth challenge:
+
+| Endpoint | `Content-Length` | Documented cadence | Validators |
+|---|---|---|---|
+| `https://realtime.hsl.fi/realtime/trip-updates/v2/hsl` | **1.27 MB** | 15s | ETag + Last-Modified |
+| `https://realtime.hsl.fi/realtime/vehicle-positions/v2/hsl` | 122 KB | 1s | ETag + Last-Modified |
+| `https://realtime.hsl.fi/realtime/service-alerts/v2/hsl` | 51 KB | 5 min | ETag + Last-Modified |
+
+`Content-Type: application/x-protobuf`, `Cache-Control: max-age=5` (1s for vehicle positions), HEAD
+supported. Trip updates are **33× smaller than gtfs.de's 42 MB**, so this feed is affordable to
+sample at a rate that actually resolves a 15s cadence — the thing gtfs.de made impossible.
+
+*Sources:* [Digitransit realtime APIs](https://digitransit.fi/en/developers/apis/5-realtime-api/)
+for the deprecation, [HSL GTFS-RT feeds](https://hsldevcom.github.io/gtfs_rt/) for the endpoints and
+cadences. *Checked:* 2026-08-28.
+
+**Licence: CC BY 4.0 indicated, not verified.** [Digitransit's terms of
+use](https://digitransit.fi/en/developers/apis/7-terms-of-use/) state *"Creative Commons name 4.0
+(CC BY) licensing"* requiring attribution *"(for example © Digitransit 2021)"* — but those terms are
+scoped to *registered* `api.digitransit.fi` usage, which is the deprecated path we are not using.
+HSL's own open-data page returns **HTTP 403 to automated fetch**, so the primary source could not be
+read. **A human should open `https://www.hsl.fi/en/hsl/open-data` and confirm the licence and exact
+attribution string before HSL is onboarded as a tenant.** Recorded as `unverified` until then, the
+same treatment as the two OCI caveats.
+
+---
+
 ### Findings
 
 #### Vendor documentation was wrong about cadence by 3×, and this generalises
@@ -120,6 +156,29 @@ Consequence, recorded in ADR 0002: **provisional SLO targets are set from measur
 tenant, never from a provider's stated figure**, and the measured value is re-derived at onboarding
 rather than assumed to hold. The plan already said targets recalibrate after two weeks of real data;
 this says the *starting* target may not come from documentation either.
+
+#### Three fixes were settled on live feeds, not on fixtures — the case for Stage 0
+
+Each of these passed its synthetic test. Two of them were nonetheless wrong, in ways a fixture
+**structurally could not** expose, and one live run found both. This is the concrete argument for
+running Stage 0 before Stage 1 rather than reasoning about feeds from documentation.
+
+- **Test C, validator suppression — found only on a live feed.** The fixture exercised the re-poll
+  pair and passed, because synthetic responses have no notion of a 304. Against real feeds both
+  re-polls returned 304, and the test that compares two payloads had no payloads: it was lost on
+  two of three feeds. Run 1b confirmed the fix on the feed that exposed it.
+- **NTP failure handling — never exercised by any test.** No fixture forced a sync failure. Run 1b's
+  end-of-run sync failed on its own and the manifest recorded `offset_ms: null, sync_failed: true`
+  rather than a fabricated `0`. The rule was written from reasoning and confirmed by accident.
+- **Test A's static-content guard — predicted by fixture, confirmed on a live feed.** Unlike the
+  other two this one the fixture *did* anticipate: `fake_static` was built for it and passed. VBB
+  then triggered it for real — 9,027 entities but 1.7% semantic churn — and Test A stood down
+  instead of reading near-identical content as an echoed timestamp.
+
+The distinction is worth keeping rather than flattening: fixtures caught what they were designed to
+catch, and the two failures were both cases where the *synthetic environment itself* lacked the
+property that mattered — HTTP caching semantics, and a network that can fail. **A fixture can only
+test the world it models.**
 
 #### gtfs.de is characterised and **excluded as a tenant**, on measured resource grounds
 
@@ -189,16 +248,25 @@ Against the criteria in PLAN.md section 6.6, written before any of these numbers
 | ovapi_tripupdates | yes (0%) | partial — undersampled, reason recorded | **no** — 16 requests, unresolved | **not yet** | yes | pending |
 | gtfs_de | yes (0%) | yes — 30s by HEAD, n=119 | yes | characterised, **excluded on resource grounds** | yes | n/a |
 
-**One feed clears the ingest bar.** Gate 0 requires three. The third and fourth come from run 2 with
-the CH and FI keys; registration is a day or two, not a blocker. No fourth keyless feed will be
-reached for to make the number up.
+**One feed clears the ingest bar.** Gate 0 requires three.
+
+**The path to three no longer runs through any API key.** HSL is keyless (above), so the three
+candidates are **vbb** (already usable), **ovapi_tripupdates** (needs a full hour to resolve its
+conditional-request behaviour) and **hsl_tripupdates** (uncharacterised, 1.27 MB, affordable to
+sample properly). One clean hour with those three can close Gate 0.
+
+opentransportdata.swiss is no longer the critical path. It stays valuable — it is the only candidate
+that forces real per-tenant secret handling and a real rate limiter, which is exactly what Stage 2
+and Stage 3 need — but it is now a fourth tenant rather than a blocker.
 
 ---
 
 ## Still unmeasured
 
-- Run 2: opentransportdata.swiss (CH) and HSL (FI) — both need API keys.
+- HSL (FI): everything. Endpoint and key-status resolved, nothing measured yet.
 - OVapi conditional-request behaviour over a full hour.
+- opentransportdata.swiss (CH): needs an API key. No longer blocking Gate 0.
+- HSL licence and attribution string, from a primary source a browser can open.
 - Ingest memory sizing: single-message decode peak × queue depth × safety factor, to be measured in
   a Linux container so architecture is the only remaining confound.
 - Everything from Stage 1 onward: rebuild drill time, onboarding manual-step count, Prometheus

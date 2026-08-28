@@ -184,7 +184,7 @@ a claim** — it is marked unverified and must not be relied on.
 | gtfs.de national | DE | none | `https://realtime.gtfs.de/realtime-free.pb` — 10-second updates, CC BY-SA 4.0, TripUpdates + ServiceAlerts. Aggregate feed, not a single operator. |
 | opentransportdata.swiss | CH | **API key** | 2 queries/minute, sliding window. The most valuable tenant despite being the most awkward: forces real per-tenant secret handling and a real rate limiter. |
 | OVapi | NL | none | `https://gtfs.ovapi.nl/nl/tripUpdates.pb` — endpoint confirmed 2026-08-28, 5.6 MB payload. Four separate endpoints exist (tripUpdates, vehiclePositions, alerts, trainUpdates); each is its own feed with its own verdict. **Licence and attribution `unresolved`** — see below. |
-| HSL Helsinki | FI | **to verify** | Digitransit may now require an API key. Verify; do not assume keyless. Well-documented and reliable otherwise, and a good baseline for comparison. |
+| HSL Helsinki | FI | **none** — verified 2026-08-28 | `https://realtime.hsl.fi/realtime/trip-updates/v2/hsl` — 1.27 MB, documented 15s, ETag + Last-Modified, HEAD supported. `api.digitransit.fi` *does* require a subscription key, but its GTFS-RT endpoints are deprecated and the replacement host needs none. Licence CC BY 4.0 **indicated, not verified** — hsl.fi returns 403 to automated fetch. |
 
 Consequence for the tenant schema. These are **first-class fields from day one**, not retrofitted.
 Every one of them is load-bearing for a later gate, and a gate cannot check a field that does not
