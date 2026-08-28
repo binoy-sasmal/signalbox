@@ -39,12 +39,20 @@ re-running the poller costs polling budget.
 py -3.12 -m venv .venv
 .venv/Scripts/python.exe -m pip install -r scripts/probe/requirements.txt
 
-# one hour, three feeds
-.venv/Scripts/python.exe scripts/probe/poll.py scripts/probe/config.run1.yaml
+# Run with system sleep disabled and the operator's settings restored after.
+# Use this rather than calling poll.py directly for anything longer than a few
+# minutes -- run 2 was voided when the machine slept for 56 of its 60 minutes.
+sh scripts/probe/run-awake.sh scripts/probe/config.run2.yaml
 
 # offline, re-runnable
-.venv/Scripts/python.exe scripts/probe/analyse.py runs/run1
+.venv/Scripts/python.exe scripts/probe/analyse.py runs/run2
 ```
+
+**A run is void below 90% coverage.** The poller measures what fraction of the
+intended window it was actually polling, marks the run `degraded`, and exits
+non-zero. It cannot report `complete` on a hole. Sleep suppression asserted
+from inside the process is recorded as *requested*, never as achieved -- run 2
+reported it asserted and the machine slept anyway.
 
 Create a file named `STOP` in the working directory to halt all polling cleanly
 with captured data intact. Ctrl-C also flushes cleanly.
