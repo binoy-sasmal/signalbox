@@ -222,5 +222,36 @@ class TestEscapeMarkerIsConfined(GateTestCase):
         self.assertCaught(path, 1, "not permitted outside")
 
 
+class TestDataFilesAreNotFalsePositives(GateTestCase):
+    """Regression: the gate must not cry wolf on its own evidence files.
+
+    Both cases below blocked a real commit of run 1's analysis. A gate that
+    fires on committed measurements teaches people to route around it, which
+    costs more than the rule earns.
+    """
+
+    def test_auth_shaped_field_names_holding_measurements_pass(self):
+        self.assertClean(self.write(
+            "analysis.json",
+            '  "median_churn_keyed_on_semantic_key": 0.1544,',
+            '  "median_key_persistence_semantic": 0.998,',
+            '  "median_key_persistence_entity_id": 0.97,',
+        ))
+
+    def test_json_trailing_comma_does_not_defeat_value_parsing(self):
+        """`"auth": "none",` left `none",` after quote-stripping and was flagged."""
+        self.assertClean(self.write(
+            "run.json", '      "auth": "none",', '      "auth": null,'))
+
+    def test_the_numeric_exemption_is_bounded(self):
+        """A long run of digits could be a token, so the exemption stops."""
+        path = self.write("cfg.yaml", "api_key: 90183726451092837465109")
+        self.assertCaught(path, 1, "auth-shaped key")
+
+    def test_a_real_key_next_to_an_auth_shaped_name_still_fails(self):
+        path = self.write("analysis.json", f'  "median_key_persistence": "{REAL_KEY}",')
+        self.assertCaught(path, 1, "auth-shaped key")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

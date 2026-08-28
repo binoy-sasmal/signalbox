@@ -54,6 +54,9 @@ from allowlist import (  # noqa: E402
 ESCAPE_MARKER = "noqa" + ": " + "secret"
 ESCAPE_MARKER_ALLOWED_IN = "test_check_no_secrets.py"
 
+# Upper bound on the numeric type-exemption; see is_not_a_credential.
+MAX_NUMERIC_EXEMPT_LEN = 12
+
 TEXT_SUFFIXES = {
     ".json", ".jsonl", ".yaml", ".yml", ".md", ".toml", ".ini", ".cfg",
     ".tf", ".tfvars", ".hcl", ".py", ".sh", ".env", ".txt",
@@ -99,6 +102,28 @@ BARE_ASSIGNMENT = re.compile(
 )
 
 
+def is_not_a_credential(value: str) -> bool:
+    """Values whose type rules them out, whatever the key is called.
+
+    Analysis output is full of auth-shaped field names that hold measurements --
+    `median_key_persistence_semantic`, `median_churn_keyed_on_semantic_key` --
+    and a float is not a secret. Without this the gate fires on its own
+    evidence files, and a gate that cries wolf on committed data teaches people
+    to route around it.
+    """
+    value = value.strip().rstrip(",").strip().strip("\"'")
+    if value.lower() in {"null", "none", "true", "false", "~", "{}", "[]", "{", "["}:
+        return True
+    try:
+        float(value)
+    except ValueError:
+        return False
+    # Bounded: a measurement is short (0.1544, 163819.5). A long run of digits
+    # could be a numeric token, so the type exemption stops before it becomes a
+    # way to smuggle one past an auth-shaped key.
+    return len(value) <= MAX_NUMERIC_EXEMPT_LEN
+
+
 def is_placeholder(value: str) -> bool:
     """Exact match only.
 
@@ -107,7 +132,9 @@ def is_placeholder(value: str) -> bool:
     through with a live credential attached. A placeholder is the WHOLE value
     or it is not a placeholder. Regression-tested in test_check_no_secrets.py.
     """
-    value = value.strip().strip("\"'")
+    # Trailing JSON punctuation stripped first: `"auth": "none",` otherwise
+    # leaves `none",` after quote-stripping and reads as a literal secret.
+    value = value.strip().rstrip(",").strip().strip("\"'")
     if not value or value == REDACTION_PLACEHOLDER:
         return True
     return bool(PLACEHOLDER_VALUE.fullmatch(value))
@@ -142,7 +169,8 @@ def scan_header_value(path: Path, number: int, field: str, key: str, value) -> l
             findings.append(Finding(path, number, f"{field}['{key}'] value carries a {description}"))
 
     for name, candidate in QUERY_PARAM.findall(value) + BARE_ASSIGNMENT.findall(value):
-        if is_auth_param(name) and not is_placeholder(candidate):
+        if (is_auth_param(name) and not is_placeholder(candidate)
+                and not is_not_a_credential(candidate)):
             findings.append(Finding(
                 path, number,
                 f"{field}['{key}'] value carries auth-bearing '{name}=' with an unredacted "
@@ -219,7 +247,8 @@ def check_text_file(path: Path) -> list[Finding]:
                 findings.append(Finding(path, number, description))
 
         for name, value in QUERY_PARAM.findall(line):
-            if is_auth_param(name) and not is_placeholder(value):
+            if (is_auth_param(name) and not is_placeholder(value)
+                    and not is_not_a_credential(value)):
                 findings.append(Finding(
                     path, number,
                     f"query parameter '{name}' carries an unredacted value. Store "
@@ -236,7 +265,7 @@ def check_text_file(path: Path) -> list[Finding]:
                 continue
             benign = (
                 is_placeholder(value)
-                or value in {"null", "none", "None", "~", "{}", "[]", "true", "false"}
+                or is_not_a_credential(value)
                 or value.startswith(("$", "#"))
                 or name.lower().endswith(("_ref", "_file", "_path", "_name", "_id"))
             )

@@ -915,8 +915,12 @@ def markdown_table(results: list[dict], synthetic: bool = False) -> str:
             f"{r['parse']['failure_rate']:.1%} |"
         )
     rows.append("")
-    rows.append("⚠ = cadence derived from an echoed header timestamp; it reflects our poll "
-                "interval, not upstream generation cadence.")
+    # Two distinct causes, and the legend must name both: an echoed header
+    # timestamp and undersampling make the same figure meaningless for
+    # different reasons, and saying only "echoed" mislabels a generation feed.
+    rows.append("⚠ = cadence is not a feed property. Either the header timestamp is echoed, or we "
+                "sampled below Nyquist and the figure is our own polling grid. The specific reason "
+                "is in `cadence.sampling` and `cadence.note` in analysis.json.")
     rows.append("Cmp gap = wall-clock separation of the snapshots each id-stability verdict "
                 "was computed from. Wider gaps are weaker evidence.")
     if synthetic:

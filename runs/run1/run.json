@@ -1,0 +1,104 @@
+{
+  "run": "run1",
+  "status": "complete",
+  "started_at": "2026-08-28T08:31:36.561805+00:00",
+  "ended_at": "2026-08-28T08:47:11.264805+00:00",
+  "observation_count": 207,
+  "user_agent": "signalbox-probe/0.1 (Stage 0 feed feasibility spike; contact: selil23188@archifun.com)",
+  "clock": {
+    "ntp_server": "pool.ntp.org",
+    "syncs": [
+      {
+        "label": "start",
+        "at": "2026-08-28T08:31:36.732805+00:00",
+        "offset_ms": -1010.6587409973145,
+        "sync_failed": false,
+        "detail": null
+      },
+      {
+        "label": "end",
+        "at": "2026-08-28T08:47:11.264805+00:00",
+        "offset_ms": -970.752477645874,
+        "sync_failed": false,
+        "detail": null
+      }
+    ],
+    "note": "Offsets are recorded, not applied. null means sync failed; never read as zero."
+  },
+  "platform": {
+    "python": "3.12.5 (tags/v3.12.5:ff3bc82, Aug  6 2024, 20:45:27) [MSC v.1940 64 bit (AMD64)]",
+    "platform": "win32",
+    "sleep_suppressed": true
+  },
+  "feeds": [
+    {
+      "id": "gtfs_de",
+      "base_url": "https://realtime.gtfs.de/realtime-free.pb",
+      "query": {},
+      "auth": "none",
+      "poll_interval_s": 5,
+      "documented_limit": null,
+      "self_imposed_ceiling": {
+        "requests": 15,
+        "window_s": 60
+      },
+      "requests_made": 54,
+      "bytes_wire_total": 1206502942,
+      "bytes_decompressed_total": 1206502942,
+      "status_counts": {
+        "200": 30,
+        "304": 22,
+        "error": 2
+      },
+      "stopped_reason": "kill switch file present",
+      "final_ceiling_requests": 15,
+      "notes": "Documented 10s updates, so 5s is a 2x oversample and cadence jitter is resolvable. No documented rate limit is known, so the ceiling is ours and not theirs -- recorded that way so metrics.md cannot later present it as an upstream fact."
+    },
+    {
+      "id": "vbb",
+      "base_url": "https://production.gtfsrt.vbb.de/data",
+      "query": {},
+      "auth": "none",
+      "poll_interval_s": 5,
+      "documented_limit": {
+        "requests": 60,
+        "window_s": 60
+      },
+      "self_imposed_ceiling": {
+        "requests": 15,
+        "window_s": 60
+      },
+      "requests_made": 137,
+      "bytes_wire_total": 101184704,
+      "bytes_decompressed_total": 469280335,
+      "status_counts": {
+        "200": 50,
+        "304": 87
+      },
+      "stopped_reason": "kill switch file present",
+      "final_ceiling_requests": 15,
+      "notes": "12 req/min against a documented 60/min, so 20% of budget. Degraded since 2026-06-04: if content is static the analyser marks Test A unavailable and Test C carries the verdict."
+    },
+    {
+      "id": "ovapi_tripupdates",
+      "base_url": "https://gtfs.ovapi.nl/nl/tripUpdates.pb",
+      "query": {},
+      "auth": "none",
+      "poll_interval_s": 60,
+      "documented_limit": null,
+      "self_imposed_ceiling": {
+        "requests": 2,
+        "window_s": 60
+      },
+      "requests_made": 16,
+      "bytes_wire_total": 30785831,
+      "bytes_decompressed_total": 91546858,
+      "status_counts": {
+        "200": 16
+      },
+      "stopped_reason": "kill switch file present",
+      "final_ceiling_requests": 2,
+      "notes": "60s, not 15s: the payload is 5.6 MB, and at 15s an hour of polling could move ~1.3 GB from a sponsored volunteer service if validators are not honoured. 60 requests an hour still supports Tests B, D and E, and Test C's two off-grid fetches are unaffected. If conditional requests are honoured the volume collapses; if they are not, that is a finding and 60s bounds the damage while we learn it. The README additionally *requires* a descriptive User-Agent, conditional requests and gzip -- all of which the poller already does."
+    }
+  ]
+}
