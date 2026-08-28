@@ -3,9 +3,9 @@
 > **Signalbox** — a multi-tenant control plane for public realtime transit feeds, where
 > onboarding a new data source is one merged pull request.
 
-**Status:** planning complete, Stage 0 not started
+**Status:** Stage 0 complete, Gate 0 passed 2026-08-29. Stage 1 not started.
 **Owner:** Binoy
-**Last updated:** 2026-08-28
+**Last updated:** 2026-08-29
 
 ---
 
@@ -465,6 +465,9 @@ no freshness SLO.
 2. An ADR on probe methodology and the header-timestamp verdict method — it determines whether an
    SLI is valid, which makes it a real decision.
 3. A tenant-schema implications note confirming or amending the section 4 field list.
+4. `docs/stage0-findings.md` — a short standalone summary of what transfers out of Stage 0,
+   separate from the measurement record in `metrics.md`. It answers "why spend a week on feeds
+   before writing any Terraform".
 
 **Gate 0:** at least three feeds meeting **all three "usable for ingest" criteria in 6.6**, each with
 a header-timestamp verdict and that verdict's evidence strength recorded.
