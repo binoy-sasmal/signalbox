@@ -96,10 +96,20 @@ The test: every changed line should trace directly to the current gate.
 
 - **No manual cluster changes.** No `kubectl apply`, `kubectl edit`, or console clicking.
   Everything reaches the cluster through git and ArgoCD. Read-only kubectl is fine.
+  **The one exception:** Ansible may create in-cluster Kubernetes objects **exactly once, at node
+  bootstrap, and only the objects ArgoCD needs in order to begin managing itself** — k3s install,
+  ArgoCD install, age key delivery. After that Ansible never touches the cluster again. There are
+  three such bootstrap steps, not one; name all three honestly.
 - **Terraform owns cloud resources only.** It must never create in-cluster Kubernetes objects.
   ArgoCD owns everything inside the cluster. `tenants/<name>.yaml` is the single source of truth
-  feeding both.
-- **No plaintext secrets in git.** SOPS + age only.
+  feeding both. Two reconcilers over one object produce a silent flapping loop, not an error.
+- **No plaintext secrets in git.** SOPS + age only. This includes **captured HTTP traffic**: any
+  tool that records requests or responses captures headers by explicit allow-list, never
+  wholesale, and stores endpoints split into `base_url` + query map with auth-bearing parameters
+  replaced by `<redacted:auth_ref>` — never a raw URL, because some APIs authenticate by query
+  parameter. The structural check covers **every committed file** and runs **in CI, not only
+  pre-commit**: `--no-verify` bypasses a local hook, and a local gate is feedback while only the
+  enforced gate is enforcement.
 - **Pin every version.** k3s, charts, image digests, provider versions, action SHAs.
 - **arm64 or multi-arch images only.** The node is OCI Ampere A1.
 - **Never label metrics with `trip_id`, `stop_id` or `vehicle_id`.** Cardinality will kill
@@ -114,11 +124,17 @@ The test: every changed line should trace directly to the current gate.
 - Secrets: SOPS + age.
 - Policy: OPA/Rego — Conftest in CI, Gatekeeper at admission.
 - Feeds: multi-country (DE, CH, NL, FI).
+- Postgres schemas and roles are owned by ArgoCD via a Postgres operator with declarative CRDs,
+  not by a SQL Job and not by Terraform (ADR 0003).
+- The lag SLI is split in two: `pipeline_latency` carries the error budget, `feed_freshness` is
+  separate and applies only to tenants whose header timestamp is trustworthy (ADR 0002).
 - Stage 4 (AI triage agent): deferred until Stage 3 is solid. Do not start it.
 
 ## Current position
 
-Stage 0 not started. Next action is the feed probe (`docs/PLAN.md` section 6).
+Stage 0 not started. Next action is the feed probe (`docs/PLAN.md` section 6), **run 1, keyless
+feeds only** (gtfs.de, VBB, OVapi). CH and FI wait on API keys and must not block Gate 0.
+ADR 0001 (Terraform apply path) is **proposed, not settled** — it needs a decision before Stage 1.
 
 ---
 
