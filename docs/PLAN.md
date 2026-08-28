@@ -635,6 +635,20 @@ State these before anyone asks:
   the cluster" is true of *operations*, not of *bootstrap*, and the distinction is stated rather
   than blurred.
 - **No public transit data is personal data.** Do not frame any of this as GDPR compliance.
+- **Feed size is a real admission constraint, and we found it by measuring.** gtfs.de is
+  characterised and **excluded as a tenant on resource grounds**: ~40 MB uncompressed per fetch (the
+  only probed feed that does not gzip) against a measured ~29s cadence — not the documented 10s —
+  which is 5–9.6 GB/hour of continuous traffic from a volunteer service, and 163,819 entities per
+  snapshot roughly twice a minute into one Postgres shared by every tenant on a 12 GB node. Slowing
+  to 5-minute polling still costs ~350 GB/month *and* makes freshness meaningless against a
+  sub-minute upstream. Its licence is clean (CC BY-SA 4.0); the exclusion is purely about resources.
+  Arithmetic in `docs/metrics.md`. This is a limit discovered, not assumed — the sort of thing this
+  system is small enough to hit and honest enough to record.
+- **Not every feed can carry an end-to-end freshness SLI.** ADR 0002's fallback for a producer that
+  echoes serve time is `max(entity timestamp)` — but gtfs.de and OVapi publish **no entity
+  timestamps at all** (coverage 0.0). A feed that both echoes *and* omits them has no freshness
+  reference of any kind and must be excluded from `feed_freshness` outright. Settle that before
+  Gate 8 rather than discovering it there.
 - Not covered at all: vendor-proprietary operational tooling, genuine multi-region geographic
   distribution, operating under production load with real users.
 
