@@ -1,0 +1,12 @@
+# Probe payload blobs. The observation JSONL and run manifest are committed --
+# they carry hashes and sizes, not feed content -- but raw payloads are repo
+# bloat with no evidential value beyond their hash.
+scripts/probe/runs/*/blobs/
+runs/*/blobs/
+
+# Kill switch sentinel
+STOP
+
+.venv/
+__pycache__/
+*.pyc
