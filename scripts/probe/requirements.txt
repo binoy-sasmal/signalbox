@@ -1,0 +1,8 @@
+# Observed, not asserted: these are the versions pip actually resolved on
+# 2026-08-28 under CPython 3.12, captured with `pip freeze`.
+httpx==0.28.1
+gtfs-realtime-bindings==2.2.0
+protobuf==7.36.0
+PyYAML==6.0.3
+ntplib==0.4.0
+psutil==7.2.2
