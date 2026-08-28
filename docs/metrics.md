@@ -175,9 +175,10 @@ the coverage check that run 2's void attempt caused to exist.
 | `ovapi_tripupdates` | 61 | 60s ⚠ (resolved in 2b) | n/a¹ | 0 | 10,932 | generation `[strong, 4/5]` | 0% |
 | `hsl_vehiclepositions` | 1492 | 2.0s ⚠ | n/a¹ | 0 | 849 | generation `[weak, 1/5]` | 0% |
 
-¹ Sampled at or slower than the cadence, so a 304 was structurally impossible and the rate is
-uninterpretable. See the correction below. OVapi's was resolved in run 2b; `hsl_vehiclepositions`'
-remains unmeasured.
+¹ Sampled at or slower than the cadence, so the 304 ceiling is near zero and the observed rate is
+uninterpretable — not impossible, but too close to zero to distinguish server behaviour from
+sampling. See the correction below. OVapi's was resolved in run 2b; `hsl_vehiclepositions`' remains
+unmeasured.
 
 Achieved intervals tracked their configured values throughout (5.16s / 61.79s / 5.17s / 2.39s), so
 none of these cadence figures is distorted by slow fetches the way gtfs.de's was.
@@ -195,21 +196,29 @@ The cadence is exactly 60s. Polling at ~62s means every request lands after a ne
 **a 304 was never possible**: the server had genuinely new content to send every time we asked. The
 test had no opportunity to fire, and its silence was read as a result.
 
-**A 304 rate is only interpretable when we poll more than once per generation.** The theoretical
-ceiling is `1 − 1/(cadence ÷ sampling interval)`, and every measurement we have sits just under it:
+**A 304 rate is only interpretable when we poll more than once per generation.** Each generation
+yields exactly one 200 and the rest 304s, so the ceiling is `1 − interval/cadence`. Every
+interpretable measurement we hold sits just under its ceiling:
 
-| Feed | Sampling | Cadence | Polls/generation | Max possible 304 | Observed |
-|---|---|---|---|---|---|
-| `vbb` | 5.16s | 29.0s | 5.62 | 82% | 70.0% |
-| `hsl_tripupdates` | 5.17s | 15.0s | 2.90 | 66% | 58.6% |
-| `ovapi` (run 2b) | 10.09s | 60.0s | 5.95 | 83% | **82.6%** |
-| `ovapi` (runs 1–2) | 61.79s | 60.0s | **0.97** | **0% — impossible** | 0.0% |
-| `hsl_vehiclepositions` | 2.39s | ~2.0s | **0.84** | **0% — impossible** | 0.2% |
+| Feed | Sampling | Cadence | Polls/gen | Ceiling | Observed | Interpretable |
+|---|---|---|---|---|---|---|
+| `ovapi` (run 2b) | 10.09s | 60.0s | 5.95 | 83.2% | **83.1%** | yes |
+| `vbb` | 5.16s | 29.0s | 5.62 | 82.2% | 70.0% | yes |
+| `hsl_tripupdates` | 5.17s | 15.0s | 2.90 | 65.5% | 58.6% | yes |
+| `ovapi` (runs 1–2) | 61.79s | 60.0s | **0.97** | **≈0%** | 0.0% | **no — confounded** |
+| `hsl_vehiclepositions` | 2.39s | ~2.0s (1–8s) | **0.84** | **≈0%** | 0.2% | **no — confounded** |
 
-**`hsl_vehiclepositions`' 0.2% is confounded in exactly the same way** and is corrected here too: its
-conditional-request behaviour is **unmeasured**, not measured-as-zero. Same host as
-`hsl_tripupdates`, which honours validators at 58.6%, so the likely answer is that it does — but
-likely is not measured, and this file holds measured numbers.
+**Precisely: the two confounded rows are near-zero-ceiling, not impossible.** At 0.97 polls per
+generation the sampling interval is only marginally longer than the cadence, so interval jitter can
+still occasionally place two polls inside one generation. `hsl_vehiclepositions` demonstrates it:
+its cadence varies between 1s and 8s, any generation outlasting 2.39s offers a 304 opportunity, and
+it **did in fact return 3** of them. Our own data falsifies "impossible" for that row. The correct
+statement is that the ceiling is close enough to zero that an observed rate cannot separate a server
+ignoring validators from one never given the chance.
+
+**`hsl_vehiclepositions`' conditional behaviour is therefore unmeasured**, not measured-as-zero. Same
+host as `hsl_tripupdates`, which honours validators at 58.6%, so it probably does too — but probably
+is not measured, and this file holds measured numbers.
 
 **The generalisation.** This is Nyquist again, applied to a second quantity: *sampling at or near the
 cadence destroys the information you are trying to collect*. The analyser already refuses to report
@@ -418,8 +427,9 @@ Whether the ingest service can actually keep up with them is Gate 5.
 
 ## Still unmeasured
 
-- **`hsl_vehiclepositions` conditional-request behaviour** — needs sampling faster than its ~1s
-  cadence to be measurable at all; at 2.39s a 304 is structurally impossible.
+- **`hsl_vehiclepositions` conditional-request behaviour** — needs sampling faster than its cadence
+  to be measurable; at 2.39s against a 1–8s cadence the 304 ceiling is near zero (3 were observed
+  out of 1492, so opportunities exist but are far too rare to read anything from).
 - **`hsl_vehiclepositions` cadence** — resolving a 1s cadence needs sustained 2+ requests/second,
   which is not a reasonable ask of a public API. "Updates at least every 2s" is what the data
   supports.

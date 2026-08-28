@@ -127,29 +127,60 @@ mean issuing both requests concurrently, which would break the single-flight pro
 request rate honest. Test C is therefore expected to be unavailable on large, slow feeds, and those
 verdicts rest on the remaining tests.
 
-### 8. Every test carries its own preconditions, and stands down when they fail
+### 8. THE PRINCIPLE: a measurement declares its preconditions and stands down when they fail
 
-Three of the five tests turned out to have a domain outside which their answer is not merely weak
-but wrong. Each was found on live data after passing its fixture, and each guard is derived from the
-test's own model rather than tuned to the feed that exposed it.
+**Silence from a structurally incapable test is not evidence of absence.**
 
-- **A — static content.** Identical payloads plus an advancing timestamp is A's echo signature
-  arriving from the opposite cause. Guarded on low entity count and low semantic churn. Found on VBB.
-- **C — a re-poll gap not shorter than the cadence.** C compares two fetches of the *same* snapshot;
-  if the pair spans a real generation, an honest timestamp advance is indistinguishable from
-  restamping. Guarded at gap ≤ ½ cadence. Found on `hsl_vehiclepositions`, where a 2.41s gap against
-  a 2.0s cadence produced a false `echo` that **outvoted two tests that were right**.
-- **B — a cadence too coarse to resolve, or a lag outside the model.** Header timestamps are integer
-  seconds, so a 2s cadence gives a sawtooth about two quantisation levels deep, which has no
-  characterisable shape; and the model places lag in [0, cadence], so a median lag *above* the
-  cadence means we are measuring the producer's own pipeline delay rather than a snapshot ageing.
-  Guarded on both. Found on `hsl_vehiclepositions`, where B cleared its generation threshold by
-  0.0009 with a spread half of what its own model predicts.
+This is the single most important thing Stage 0 produced. It was not designed in — it was found five
+separate times, each time as a specific bug, before the shape common to all five became visible. Each
+instance passed its fixture and failed on live data, and in three cases the test did not merely go
+quiet: it returned a confident wrong answer that outvoted correct ones.
 
-**A verdict carries how many tests could speak to it.** Five tests agreeing and one test unopposed
-are both "unanimous", and reporting them identically overstates the second. Verdicts are recorded as
+Every measurement here now states the domain in which its answer means anything, and reports
+`unavailable` outside it rather than a number.
+
+| # | Measurement | Precondition | Found on | What it did when violated |
+|---|---|---|---|---|
+| 1 | **Test A** — restamping via content hash | Content must actually change | VBB | Near-static content plus an advancing timestamp is A's echo signature from the opposite cause |
+| 2 | **Test B** — sawtooth of lag | Cadence must span ≥5 one-second quanta, and median lag must fall inside `[0, cadence]` | `hsl_vehiclepositions` | Cleared its threshold by **0.0009** with a spread half its own model predicts |
+| 3 | **Test C** — asynchronous re-poll | Re-poll gap must be shorter than the cadence | `hsl_vehiclepositions` | Returned a false `echo` that **outvoted two correct tests**, dragging the verdict to `unknown` |
+| 4 | **Cadence** | Sampling must be at least 2× the cadence (Nyquist) | gtfs.de | Reported a 30s cadence that was purely our own sampling grid |
+| 5 | **304 rate** | More than one poll per generation | OVapi | Reported 0% from **77 observations** in a regime where a 304 was near-impossible, and a Gate 5 design consequence was drawn from it |
+
+Instances 4 and 5 are the same statement about different quantities, which is what made the pattern
+visible: **sampling at or near the rate of the thing you are measuring destroys the information you
+are trying to collect.** The analyser had been taught that for cadence and not for 304 rates, so it
+made the identical mistake twice in two hours.
+
+Three properties of this failure that make it worth a principle rather than five patches:
+
+- **Volume of evidence is no defence.** 77 observations produced a confident, actionable, wrong
+  conclusion. More samples from an incapable measurement give more confidence in the same error.
+- **It survives fixtures.** Every one of these passed synthetic tests, because a fixture only models
+  the world its author already understood. See §14.
+- **It is invisible in the output.** A test that cannot fire and a test that fired and found nothing
+  produce identical numbers. Only the precondition distinguishes them, and only if someone wrote it
+  down.
+
+**A verdict also carries how many tests could speak to it.** Five tests agreeing and one test
+unopposed are both "unanimous", and reporting them identically overstates the second. Verdicts read
 `generation [strong, 4/5]` or `generation [weak, 1/5]`. Evidence strength travels with the verdict,
 as the comparison gap travels with persistence.
+
+#### Where this transfers, and why it matters more there
+
+**Gate 8.** An SLI computed over a window with too few samples has exactly this problem, and it is a
+far more expensive place to learn it. A burn-rate alert evaluated over a window containing three
+requests is not a low error rate; it is no measurement at all — and unlike a probe, it will be
+trusted by an on-call human at 3am. Every SLI recording rule must declare its minimum sample count
+and report *no data* rather than a reassuring number below it. The multiwindow burn-rate alerts in
+Gate 8 need this before they are wired to anything that pages.
+
+**Gate 7.** A cardinality or scrape-health figure taken over a window shorter than the scrape
+interval is the same error.
+
+**Stage 2.** An onboarding-time measurement taken before a tenant has produced data is the same
+error again, and would make every new tenant look healthy.
 
 ### 9. When two criteria documents disagreed, we measured rather than interpreted
 
