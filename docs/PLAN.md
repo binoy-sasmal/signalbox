@@ -3,9 +3,9 @@
 > **Signalbox** — a multi-tenant control plane for public realtime transit feeds, where
 > onboarding a new data source is one merged pull request.
 
-**Status:** Stage 0 complete, Gate 0 passed 2026-08-29. Stage 1 not started.
+**Status:** see [`status.md`](status.md) — kept there so this header cannot drift from it,
+and so the builder's account of its own progress is not loaded as ambient context.
 **Owner:** Binoy
-**Last updated:** 2026-08-29
 
 ---
 
