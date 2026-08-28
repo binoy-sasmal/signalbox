@@ -163,58 +163,93 @@ No numbers from this run appear anywhere in this file.
 
 ---
 
+### Run 2 — 2026-08-28, four keyless endpoints, full hour
+
+**59.9 minutes, 2705 observations, 890 MB, coverage 99.9% with zero gaps.** The first run to pass
+the coverage check that run 2's void attempt caused to exist.
+
+| Feed | Reqs | Cadence | 304 | False-200 | Entities | Header timestamp | Parse fail |
+|---|---|---|---|---|---|---|---|
+| `vbb` | 562 | **29.0s** | 70.0% | 0 | 8,309 | generation `[moderate, 2/5]` | 0% |
+| `hsl_tripupdates` | 590 | **15.0s** | 58.6% | 3 | 1,261 | generation `[moderate, 2/5]` | 0% |
+| `ovapi_tripupdates` | 61 | 60s ⚠ (resolved in 2b) | **0.0%** | 0 | 10,932 | generation `[strong, 4/5]` | 0% |
+| `hsl_vehiclepositions` | 1492 | 2.0s ⚠ | 0.2% | 0 | 849 | generation `[weak, 1/5]` | 0% |
+
+Achieved intervals tracked their configured values throughout (5.16s / 61.79s / 5.17s / 2.39s), so
+none of these cadence figures is distorted by slow fetches the way gtfs.de's was.
+
+#### OVapi does not honour conditional requests — closed question
+
+**0 of 77 responses were 304**, across both runs (16 in run 1, 61 in run 2), every one of them
+carrying `If-None-Match` and `If-Modified-Since`. Not a small sample and not ambiguous.
+
+**Gate 5 consequence:** there are **no conditional-request savings available for this tenant**. Every
+poll costs a full body. Any bytes-saved figure quoted for the platform must exclude OVapi, and its
+poll interval has to be chosen on bandwidth grounds alone, because there is no cheap "nothing
+changed" answer to lean on.
+
+#### The false-200 check fires on real data
+
+`hsl_tripupdates` returned **3 false-200s** — a 200 carrying a body byte-identical to its
+predecessor, despite the request carrying validators the server otherwise honours 58.6% of the time.
+
+Small, and not itself a problem at that rate. Worth recording because it demonstrates the check is
+**live rather than dead code**: a server that honours validators most of the time can still return a
+redundant body, and Gate 5's bytes-saved claim would silently overstate itself without measuring
+this. A 304 rate alone would have looked clean.
+
+#### Evidence strength varies sharply between feeds
+
+The same verdict, `generation`, rests on very different amounts of evidence:
+`ovapi` on four tests, `vbb` and `hsl_tripupdates` on two, and `hsl_vehiclepositions` on **one**.
+
+`hsl_vehiclepositions` is the weak case for a structural reason, not a data-quality one: at a 2s
+cadence, three of the five tests have preconditions that a feed that fast cannot satisfy. Test D has
+no entity timestamps to work with, Test B needs a cadence spanning more than two one-second
+quantisation levels, and Test C needs a re-poll gap shorter than the cadence. Recording it as
+`generation [weak, 1/5]` rather than plain `generation` is the honest form — see ADR 0004 §8.
+
+---
+
 ### Findings
 
-#### Vendor documentation was wrong about cadence by 3×, and this generalises
+#### Documented cadence is unverified in either direction — and so is a short measurement
 
-**gtfs.de documents 10-second updates and delivers 30.** Measured across a full hour by HEAD against
-`Last-Modified`, 119 intervals: **p50 30.0s, p95 34s, min 25s, max 36s, stdev 2.0s**. The documented
-figure is unambiguous — *"Er wird alle 10 Sekunden aktualisiert"* — and it is off by a factor of
-three. The feed is not erratic; it is reliably three times slower than advertised, which is worse,
-because an erratic feed would have been noticed.
+Three legs, and the argument needs all three.
 
-This is the single most transferable finding in Stage 0, and it is **not** about the feed we are
-dropping. It applies to every tenant we will ever onboard:
+| Feed | Documented | Measured | By |
+|---|---|---|---|
+| gtfs.de | 10s | **30s** | 119 intervals, 60 min |
+| HSL trip updates | 15s | **15.0s** | 590 requests, 60 min |
+| VBB | — | **16s → 29s** | our own 16-min run, then our own 60-min run |
 
-- **An SLO target set from vendor documentation would have been wrong before a single datapoint
-  arrived.** A freshness objective calibrated to a 10s upstream, against a feed that regenerates
-  every 30s, would burn its error budget continuously while nothing was broken.
-- **It would have been wrong in the safe-looking direction.** Documentation understating cadence
-  makes a system look worse than it is; overstating it makes an alert threshold too loose to fire.
-  Neither is detectable without measuring.
-- **The measurement was nearly free.** A full hour of HEAD sampling cost **201.5 MB**, essentially
-  all of it the handful of deliberate full GETs; the HEADs themselves moved no body bytes at all.
-  The GET-based approach spent **1.2 GB in 16 minutes** and still could not resolve the cadence,
-  because 17.8s sampling cannot see a 30s period. Cheaper *and* correct, which is not the usual
-  trade.
+**gtfs.de is wrong by 3×.** *"Er wird alle 10 Sekunden aktualisiert"*, and it delivers 30s with a
+stdev of 2.0s. Not erratic — reliably three times slower than advertised, which is worse, because
+erratic would have been noticed.
 
-Consequence, recorded in ADR 0002: **provisional SLO targets are set from measured cadence per
-tenant, never from a provider's stated figure**, and the measured value is re-derived at onboarding
-rather than assumed to hold. The plan already said targets recalibrate after two weeks of real data;
-this says the *starting* target may not come from documentation either.
+**HSL is exactly right.** Documented 15s, measured 15.0s. So the claim is *not* "vendor
+documentation is wrong". It is that documented cadence is **unverified in either direction**, which
+is a different and more useful statement: you cannot tell the accurate ones from the inaccurate ones
+without measuring, so the cost of measuring is the price of knowing which case you are in.
 
-#### Three fixes were settled on live feeds, not on fixtures — the case for Stage 0
+**And our own short run was also wrong.** Run 1 measured VBB's cadence at 16s from 137 requests over
+16 minutes. Run 2 measured 29s from 562 requests over a full hour. **We were off by nearly 2× using
+our own instrument**, for the same reason gtfs.de's documentation is off: insufficient observation.
+A measurement is not automatically better than a document; it is better when it has adequate
+duration behind it, and worse when it does not.
 
-Each of these passed its synthetic test. Two of them were nonetheless wrong, in ways a fixture
-**structurally could not** expose, and one live run found both. This is the concrete argument for
-running Stage 0 before Stage 1 rather than reasoning about feeds from documentation.
+That third leg is what makes this defensible rather than self-serving. Without it the finding reads
+as "vendors are careless and we are rigorous". With it, it reads as "sampling duration determines
+whether any cadence figure — theirs or ours — can be trusted", which is the claim that actually
+transfers.
 
-- **Test C, validator suppression — found only on a live feed.** The fixture exercised the re-poll
-  pair and passed, because synthetic responses have no notion of a 304. Against real feeds both
-  re-polls returned 304, and the test that compares two payloads had no payloads: it was lost on
-  two of three feeds. Run 1b confirmed the fix on the feed that exposed it.
-- **NTP failure handling — never exercised by any test.** No fixture forced a sync failure. Run 1b's
-  end-of-run sync failed on its own and the manifest recorded `offset_ms: null, sync_failed: true`
-  rather than a fabricated `0`. The rule was written from reasoning and confirmed by accident.
-- **Test A's static-content guard — predicted by fixture, confirmed on a live feed.** Unlike the
-  other two this one the fixture *did* anticipate: `fake_static` was built for it and passed. VBB
-  then triggered it for real — 9,027 entities but 1.7% semantic churn — and Test A stood down
-  instead of reading near-identical content as an echoed timestamp.
+**Consequences**, recorded in ADR 0002:
 
-The distinction is worth keeping rather than flattening: fixtures caught what they were designed to
-catch, and the two failures were both cases where the *synthetic environment itself* lacked the
-property that mattered — HTTP caching semantics, and a network that can fail. **A fixture can only
-test the world it models.**
+- Provisional SLO targets come from measured cadence per tenant, never from a documented figure.
+- A cadence measured over a short window is provisional too. VBB's 29s supersedes its 16s, and any
+  figure gets re-derived over a full window before an SLO is calibrated to it.
+- Measuring is cheap where the feed supports HEAD: a full hour of `Last-Modified` sampling cost
+  201.5 MB against 1.2 GB of GETs that could not resolve the same number.
 
 #### OVapi's licence stays `unresolved`, on purpose
 

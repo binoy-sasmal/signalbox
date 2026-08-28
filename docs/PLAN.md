@@ -466,8 +466,23 @@ no freshness SLO.
    SLI is valid, which makes it a real decision.
 3. A tenant-schema implications note confirming or amending the section 4 field list.
 
-**Gate 0:** at least three feeds confirmed usable, with measured cadence, ETag behaviour and a
-header-timestamp verdict recorded for each. Run 1's three keyless feeds can satisfy this alone.
+**Gate 0:** at least three feeds meeting **all three "usable for ingest" criteria in 6.6**, each with
+a header-timestamp verdict and that verdict's evidence strength recorded.
+
+Section 6.6 is the definition. This line deliberately does not restate the criteria in its own words.
+
+> **Why that sentence is phrased so defensively.** It previously *did* restate them — "with measured
+> cadence, ETag behaviour and a header-timestamp verdict" — and the two passages disagreed. 6.6
+> accepts "either a cadence is derivable, or it is established why it is not"; 6.7 asked flatly for a
+> measured cadence. At the gate, two feeds had a measured cadence and two had a documented reason
+> why not, so whether Gate 0 passed depended on which sentence you read.
+>
+> **6.6 was written before any numbers existed precisely so that nobody would have to interpret
+> anything at the gate.** Two documents disagreeing meant the criteria were not airtight, and
+> resolving that by picking the reading that passes is the move this discipline exists to prevent —
+> even when that reading is the better one. The ambiguity was removed by measurement instead: a 25
+> minute HEAD run resolved the outstanding cadence at near-zero cost, and the gate was then decided
+> with no interpretation involved. Recorded in ADR 0004.
 
 ---
 

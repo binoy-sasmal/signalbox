@@ -96,7 +96,14 @@ Ingest pipeline success rate stays our fault domain and keeps carrying the error
 - **The provisional target comes from measured cadence, never from the provider's documentation.**
   Stage 0 found gtfs.de documenting 10-second updates and delivering ~30 — wrong by 3×, in the
   direction that would have burned freshness budget continuously while nothing was broken. See
-  "Vendor documentation was wrong about cadence by 3×" in `docs/metrics.md`. This binds every
+  "Documented cadence is unverified in either direction" in `docs/metrics.md`. This binds every
   tenant, not only the one that produced it: cadence is measured at onboarding, cheaply, by HEAD
   against `Last-Modified`, and the measured figure is what `feed_freshness` is calibrated to. A
   documented cadence is a hypothesis, and a cheap one to test.
+- **A cadence measured over a short window is provisional too.** Stage 0 measured VBB at 16s from
+  16 minutes and at 29s from a full hour — our own instrument was off by nearly 2× for exactly the
+  reason gtfs.de's documentation was: insufficient observation. HSL, meanwhile, matched its
+  documented 15s precisely. The rule is therefore not "trust measurement over documentation" but
+  **"a cadence figure is only as good as the duration behind it"**, whoever produced it. Any figure
+  an SLO is calibrated to is re-derived over a full window first. See the three-way finding in
+  `docs/metrics.md`.

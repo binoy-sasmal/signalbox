@@ -127,21 +127,66 @@ mean issuing both requests concurrently, which would break the single-flight pro
 request rate honest. Test C is therefore expected to be unavailable on large, slow feeds, and those
 verdicts rest on the remaining tests.
 
-### 8. Clock discipline
+### 8. Every test carries its own preconditions, and stands down when they fail
+
+Three of the five tests turned out to have a domain outside which their answer is not merely weak
+but wrong. Each was found on live data after passing its fixture, and each guard is derived from the
+test's own model rather than tuned to the feed that exposed it.
+
+- **A — static content.** Identical payloads plus an advancing timestamp is A's echo signature
+  arriving from the opposite cause. Guarded on low entity count and low semantic churn. Found on VBB.
+- **C — a re-poll gap not shorter than the cadence.** C compares two fetches of the *same* snapshot;
+  if the pair spans a real generation, an honest timestamp advance is indistinguishable from
+  restamping. Guarded at gap ≤ ½ cadence. Found on `hsl_vehiclepositions`, where a 2.41s gap against
+  a 2.0s cadence produced a false `echo` that **outvoted two tests that were right**.
+- **B — a cadence too coarse to resolve, or a lag outside the model.** Header timestamps are integer
+  seconds, so a 2s cadence gives a sawtooth about two quantisation levels deep, which has no
+  characterisable shape; and the model places lag in [0, cadence], so a median lag *above* the
+  cadence means we are measuring the producer's own pipeline delay rather than a snapshot ageing.
+  Guarded on both. Found on `hsl_vehiclepositions`, where B cleared its generation threshold by
+  0.0009 with a spread half of what its own model predicts.
+
+**A verdict carries how many tests could speak to it.** Five tests agreeing and one test unopposed
+are both "unanimous", and reporting them identically overstates the second. Verdicts are recorded as
+`generation [strong, 4/5]` or `generation [weak, 1/5]`. Evidence strength travels with the verdict,
+as the comparison gap travels with persistence.
+
+### 9. When two criteria documents disagreed, we measured rather than interpreted
+
+A process finding worth keeping. PLAN.md section 6.6 defined "usable" before any numbers existed,
+specifically so that nothing would need interpreting at the gate. Section 6.7's Gate 0 sentence
+restated the criteria in its own words — and the two diverged: 6.6 accepted "established why a
+cadence is not derivable", 6.7 asked flatly for "measured cadence". At the gate, two feeds had a
+measured cadence and two had a documented reason why not.
+
+**The right reading was probably 6.6**, since it was the purpose-built definition. It was still the
+wrong way to settle it: choosing between two disagreeing documents by adopting the one that passes is
+indistinguishable, from outside, from moving the goalposts — and a gate decided that way is not
+evidence of anything.
+
+The ambiguity was removed instead of argued. A 25-minute HEAD-only run resolved OVapi's cadence at
+near-zero bandwidth, after which three feeds had measured cadences and the disagreement no longer
+mattered. 6.7 now defers to 6.6 rather than restating it, so the two cannot diverge again.
+
+**Generalisation for later gates:** when a gate's criteria admit two readings, the cost of removing
+the ambiguity is usually far lower than the cost of a gate whose passage rests on a reading. Measure
+first; reconcile the documents second.
+
+### 10. Clock discipline
 
 Wall clock anchored once; every interval from a monotonic base. NTP offset is **recorded, not
 applied**, so the correction stays visible and reversible. A failed sync records `null` with a flag
 and **never zero** — a silent zero is a fabricated measurement that would lend unearned precision to
 every derived lag figure. HTTP `Date` provides an independent per-request reference.
 
-### 9. No deliberate rate-limit provocation, on any feed
+### 11. No deliberate rate-limit provocation, on any feed
 
 A 429 is recorded in full if it arrives, but we do not chase one. VBB is degraded, so provoking it
 would perturb an upstream that is not behaving normally; CH holds a revocable key whose loss costs
 the project a real capability. Section 6 of the plan originally called for approaching the documented
 limit; that was dropped.
 
-### 10. One endpoint is one feed id
+### 12. One endpoint is one feed id
 
 Every timestamp test assumes one feed is one message stream. OVapi alone exposes four endpoints
 (`tripUpdates`, `vehiclePositions`, `alerts`, `trainUpdates`) which may stamp differently. Two
@@ -149,7 +194,7 @@ config entries sharing an id would interleave two streams into a single verdict 
 plausible and was meaningless. The poller rejects duplicate ids and non-string `base_url` at
 startup.
 
-### 11. Credential capture is structural
+### 13. Credential capture is structural
 
 Headers by explicit allow-list, dropped at capture rather than redacted after. Endpoints stored
 split into `base_url` plus a query map, never joined, because some transit APIs authenticate by
