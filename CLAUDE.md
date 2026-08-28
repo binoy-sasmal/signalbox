@@ -90,6 +90,20 @@ The test: every changed line should trace directly to the current gate.
 - Record measured numbers in `docs/metrics.md` as they are observed. That file is the evidence
   base for interview claims. An unmeasured claim does not go in it.
 
+**At every gate boundary, state the review position before anything else.** Give the date of
+the last `/review`, the range it covered, and its verdict, from `docs/reviews/log.md`.
+
+**If no review has run since the previous gate closed, that absence is the thing to report.**
+Not a caveat at the end — the first line. Nothing else in this repo detects it: the review log
+records reviews that happened and is silent about reviews nobody asked for, and a clean log
+during a stretch where `/review` was simply never run is indistinguishable from a clean log
+during a stretch where it was. A run of good work is exactly when the gap opens, because
+nothing feels wrong.
+
+`/review` runs the `gate-reviewer` agent in an isolated context that cannot see the
+conversation. It reads artefacts, not your account of them — so do not summarise the work to
+it, and do not treat its ACCEPT as agreement with your reasoning. It never saw your reasoning.
+
 ---
 
 ## Hard rules
