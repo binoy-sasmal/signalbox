@@ -214,5 +214,37 @@ class TestPreconditionGuards(FixtureTestCase):
             self.assertEqual(5, strength["total_tests"])
 
 
+class TestConditionalRateInterpretability(FixtureTestCase):
+    """Regression: a 304 rate needs more than one poll per generation.
+
+    Runs 1 and 2 concluded "OVapi ignores validators" from 77 observations
+    taken at ~62s against a 60s cadence, where a 304 was near-impossible. Run
+    2b, sampling six times per generation, measured 82.6%. The guard cascades
+    off the cadence guards: an untrusted cadence means polls-per-generation is
+    unknown, so the rate cannot be separated from a sampling artefact.
+    """
+
+    def test_well_sampled_feed_is_interpretable(self):
+        cond = self.feeds["fake_generation"]["conditional_requests"]
+        self.assertTrue(cond["interpretable"])
+        self.assertGreater(cond["polls_per_generation"], 1.5)
+        self.assertGreater(cond["theoretical_ceiling"], 0.0)
+
+    def test_feed_sampled_at_its_own_cadence_is_not_interpretable(self):
+        cond = self.feeds["undersampled_fast"]["conditional_requests"]
+        self.assertFalse(cond["interpretable"])
+        self.assertIn("reason", cond)
+
+    def test_the_ceiling_is_reported_so_a_reader_can_judge(self):
+        """An observed rate means little without the maximum it could have hit."""
+        cond = self.feeds["fake_generation"]["conditional_requests"]
+        self.assertIn("theoretical_ceiling", cond)
+        self.assertIn("polls_per_generation", cond)
+
+    def test_uninterpretable_rates_are_flagged_in_the_rendered_table(self):
+        table = markdown_table(self.output["feeds"], synthetic=self.output["synthetic"])
+        self.assertIn("polls per generation", table)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

@@ -76,6 +76,14 @@ E_NOISE_FLOOR_S = 1.0
 # header-timestamp verdict: undersampling and echo stamping are different ways
 # for a cadence figure to be meaningless.
 NYQUIST_FACTOR = 2.0
+# A 304 rate is only interpretable if we polled more than once per generation.
+# Each generation yields exactly one 200 and (polls_per_generation - 1) 304s, so
+# the ceiling is 1 - interval/cadence. Below this many polls per generation the
+# ceiling collapses toward zero and an observed rate cannot distinguish "the
+# server ignores validators" from "we never gave it the chance". Runs 1 and 2
+# concluded the former about OVapi from 77 observations; run 2b, sampling six
+# times per generation, measured 82.6%.
+MIN_POLLS_PER_GENERATION = 1.5
 GRID_TOLERANCE = 0.15
 GRID_FRACTION = 0.8
 
@@ -877,6 +885,48 @@ def analyse_feed(feed_id: str, observations: list[dict], run_dir: Path,
     if current_run:
         downtime_runs.append(current_run)
 
+    # A 304 rate needs a trustworthy cadence to be interpretable at all, so the
+    # guard cascades off the cadence guards: if we could not resolve how often
+    # the feed regenerates, we cannot know how many chances the server had to
+    # answer 304, and the observed rate describes our sampling rather than the
+    # server.
+    trusted_cadence = None
+    if not cadence.get("unreliable") and cadence["delta_p50_s"]:
+        trusted_cadence = cadence["delta_p50_s"]
+    elif not last_modified_cadence["sampling"].get("undersampled") and last_modified_cadence["delta_p50_s"]:
+        trusted_cadence = last_modified_cadence["delta_p50_s"]
+
+    conditional_requests = {
+        "sent_with_validator": len(with_validator),
+        "returned_304": len(not_modified),
+        "not_modified_rate": round(len(not_modified) / len(with_validator), 4) if with_validator else None,
+        "honoured_by_mode": dict(honoured_by),
+        "false_200_identical_body": false_200,
+        "note": "false_200 = a 200 whose body hash equals the previous body's. The server "
+                "advertises validators it does not honour; Gate 5's bytes-saved claim rests here.",
+    }
+
+    if trusted_cadence is None or not effective_interval:
+        conditional_requests["interpretable"] = False
+        conditional_requests["reason"] = (
+            "no trustworthy cadence, so polls per generation is unknown and the observed rate "
+            "cannot be separated from a sampling artefact"
+        )
+    else:
+        polls_per_generation = trusted_cadence / effective_interval
+        ceiling = 1 - effective_interval / trusted_cadence
+        conditional_requests["polls_per_generation"] = round(polls_per_generation, 2)
+        conditional_requests["theoretical_ceiling"] = round(max(0.0, ceiling), 4)
+        conditional_requests["minimum_polls_per_generation"] = MIN_POLLS_PER_GENERATION
+        conditional_requests["interpretable"] = polls_per_generation >= MIN_POLLS_PER_GENERATION
+        if not conditional_requests["interpretable"]:
+            conditional_requests["reason"] = (
+                f"only {polls_per_generation:.2f} polls per generation "
+                f"({MIN_POLLS_PER_GENERATION} required): the server had almost no opportunity to "
+                f"answer 304, so an observed {conditional_requests['not_modified_rate']:.1%} cannot "
+                "distinguish a server that ignores validators from one never given the chance"
+            )
+
     wire = [o["body_bytes_wire"] for o in observations if o.get("body_bytes_wire")]
     decompressed = [o["body_bytes_decompressed"] for o in observations if o.get("body_bytes_decompressed")]
 
@@ -885,15 +935,7 @@ def analyse_feed(feed_id: str, observations: list[dict], run_dir: Path,
         "requests": len(observations),
         "status_distribution": dict(status_counts),
         "methods": dict(collections.Counter(o.get("method", "GET") for o in observations)),
-        "conditional_requests": {
-            "sent_with_validator": len(with_validator),
-            "returned_304": len(not_modified),
-            "not_modified_rate": round(len(not_modified) / len(with_validator), 4) if with_validator else None,
-            "honoured_by_mode": dict(honoured_by),
-            "false_200_identical_body": false_200,
-            "note": "false_200 = a 200 whose body hash equals the previous body's. The server "
-                    "advertises validators it does not honour; Gate 5's bytes-saved claim rests here.",
-        },
+        "conditional_requests": conditional_requests,
         "cadence": cadence,
         "last_modified_cadence": last_modified_cadence,
         "effective_interval_s": effective_interval,
@@ -983,7 +1025,8 @@ def markdown_table(results: list[dict], synthetic: bool = False) -> str:
         rows.append(
             f"| {r['feed']} | {r['requests']} | "
             f"{f'{total_bytes / 1e6:.1f}' if total_bytes else '—'} | {cadence_cell} | "
-            f"{percent(r['conditional_requests']['not_modified_rate'])} | "
+            f"{percent(r['conditional_requests']['not_modified_rate'])}"
+            + ("" if r['conditional_requests'].get('interpretable', True) else " ⚠") + " | "
             f"{r['conditional_requests']['false_200_identical_body']} | "
             f"{r['entities']['median_per_snapshot']} | "
             f"{percent(churn_data['median_key_persistence_entity_id'])} / "
@@ -1006,6 +1049,9 @@ def markdown_table(results: list[dict], synthetic: bool = False) -> str:
                 "is in `cadence.sampling` and `cadence.note` in analysis.json.")
     rows.append("Cmp gap = wall-clock separation of the snapshots each id-stability verdict "
                 "was computed from. Wider gaps are weaker evidence.")
+    rows.append("A ⚠ on the 304 rate means fewer than "
+                f"{MIN_POLLS_PER_GENERATION} polls per generation: the server had almost no "
+                "opportunity to answer 304, so the figure describes our sampling, not the server.")
     if synthetic:
         rows += ["", SYNTHETIC_BANNER]
     return "\n".join(rows)
