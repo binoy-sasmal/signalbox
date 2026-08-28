@@ -216,6 +216,27 @@ catch, and the two failures were both cases where the *synthetic environment its
 property that mattered — HTTP caching semantics, and a network that can fail. **A fixture can only
 test the world it models.**
 
+#### OVapi's licence stays `unresolved`, on purpose
+
+Use is explicitly permitted — *"You are free to use this data"* — but there is no SPDX identifier and
+no attribution string for general use. **No enquiry was sent to the operator and none is planned.**
+
+The reasoning, having re-examined it rather than carrying the action forward as settled:
+
+- **Nothing is unmet.** Attribution obligations bind on redistribution or public display. We do
+  neither: payload blobs are gitignored and what is committed is hashes, sizes and headers.
+- **OVapi is not load-bearing.** Once HSL proved keyless, Gate 0 closes on vbb and the two HSL
+  endpoints without it.
+- **`unresolved` is worth more than an answer.** It gives Stage 3's compliance gate a genuine tenant
+  to reject, rather than a field every tenant passes by construction. Resolving it would remove the
+  only real test subject that gate has.
+- **It costs a volunteer service nothing.** The README asks consumers to identify themselves by
+  User-Agent, which we do. It does not ask to be emailed.
+
+Revisit only if OVapi is onboarded *and* something triggers the attribution obligation — or later,
+deliberately, if Stage 3 should demonstrate the full cycle: gate blocks, licence resolves, gate
+passes.
+
 #### gtfs.de is characterised and **excluded as a tenant**, on measured resource grounds
 
 Not a gap in the probe. A documented rejection with arithmetic behind it.

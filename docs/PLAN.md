@@ -205,7 +205,11 @@ service level agreement (best-effort) nor are you allowed to say you represent o
 the transit agencies listed here"* — but there is no SPDX identifier and no required attribution
 string for general use. The README's citation block is scoped to a scientific usage policy, and
 [Mobility Database](https://mobilitydatabase.org/feeds/gtfs_rt/mdb-1645) points at a different terms
-URL. Checked 2026-08-28; email sent to `ovinfo@ovapi.nl`, awaiting reply.
+URL. Checked 2026-08-28. **No enquiry was sent to `ovinfo@ovapi.nl` and none is planned.** Permission
+to use is explicit, we neither redistribute nor display the data, and an unresolved licence gives
+Stage 3's compliance gate a real tenant to reject rather than a field every tenant passes by
+construction. Reasoning in `docs/metrics.md`. Revisit only if OVapi is onboarded *and* something
+triggers the attribution obligation.
 
 **This is better Stage 3 material than a clean answer would have been.** A compliance gate that
 rejects any tenant whose `licence` is `unresolved` is the gate doing real work, rather than

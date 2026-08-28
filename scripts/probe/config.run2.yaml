@@ -97,7 +97,8 @@ feeds:
     licence_checked: "2026-08-28"
     licence_status: >-
       Use explicitly permitted by the README; no SPDX identifier and no required
-      attribution string for general use. Email to ovinfo@ovapi.nl outstanding.
+      attribution string for general use. No enquiry sent and none planned; the
+      unresolved state is deliberate. See docs/metrics.md.
     notes: >-
       60s answers the open question about this feed -- whether validators are
       honoured -- because a GET with validators is what detects a false-200, and
