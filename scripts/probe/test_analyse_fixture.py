@@ -127,6 +127,45 @@ class TestEntityIdStability(FixtureTestCase):
         self.assertGreater(gap["p50"], 0)
 
 
+class TestCadenceResolvability(FixtureTestCase):
+    """A cadence figure is only a feed property if we sampled fast enough for it.
+
+    gtfs.de reported a 30s cadence in run 1 that was purely our sampling grid,
+    and nothing flagged it. The guard is independent of the header-timestamp
+    verdict: undersampling and echo stamping are different ways for the same
+    number to be meaningless.
+    """
+
+    def test_resolvable_feed_is_not_flagged(self):
+        cadence = self.feeds["fake_generation"]["cadence"]
+        self.assertFalse(cadence.get("unreliable", False))
+        self.assertFalse(cadence["sampling"]["undersampled"])
+
+    def test_feed_regenerating_as_fast_as_we_poll_is_flagged(self):
+        cadence = self.feeds["undersampled_fast"]["cadence"]
+        self.assertTrue(cadence["sampling"]["undersampled"])
+        self.assertTrue(cadence["unreliable"])
+        self.assertIn("UNDERSAMPLED", cadence["note"])
+
+    def test_flag_is_independent_of_the_header_verdict(self):
+        """The flag fires without the verdict being `echo`.
+
+        Previously cadence was only ever flagged when the header timestamp was
+        echoed. Undersampling is a separate failure mode and must flag on its
+        own. (This feed's verdict comes out `unknown`, which is itself correct:
+        sampling as fast as the feed regenerates leaves Test B unable to tell a
+        sawtooth from a flat band, so the tests disagree and we record that
+        rather than resolving it.)
+        """
+        self.assertNotEqual("echo", self.verdict("undersampled_fast"))
+        self.assertTrue(self.feeds["undersampled_fast"]["cadence"]["unreliable"])
+
+    def test_effective_interval_is_measured_not_configured(self):
+        sampling = self.feeds["fake_generation"]["cadence"]["sampling"]
+        self.assertIsNotNone(sampling["effective_interval_s"])
+        self.assertIsNotNone(sampling["nyquist_limit_s"])
+
+
 class TestSyntheticOutputIsLabelled(FixtureTestCase):
     """metrics.md holds measured numbers only; synthetic output must never pass for one."""
 

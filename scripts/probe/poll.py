@@ -22,6 +22,7 @@ import collections
 import hashlib
 import json
 import random
+import statistics
 import sys
 import time
 from datetime import datetime, timedelta, timezone
@@ -190,9 +191,21 @@ class FeedProbe:
         # report, not an estimate.
         self.bytes_wire = 0
         self.bytes_decompressed = 0
+        # Request start times, so the manifest can carry the interval we
+        # actually achieved rather than the one we configured.
+        self.request_starts: list[float] = []
 
-    def _conditional_headers(self) -> tuple[dict, str]:
-        """Rotate which validators we send, so we learn which one is honoured."""
+    def _conditional_headers(self, probe_action: str) -> tuple[dict, str]:
+        """Rotate which validators we send, so we learn which one is honoured.
+
+        Test C is exempt. It is defined as comparing two *bodies*, and a 304
+        has none -- so sending validators on a re-poll destroys the test rather
+        than economising on it. Run 1 lost Test C on two of three feeds exactly
+        this way: both re-polls returned 304 and produced no usable pair.
+        """
+        if probe_action.startswith("async_repoll"):
+            return {}, "none"
+
         send_inm = self.etag is not None
         send_ims = self.last_modified is not None
 
@@ -218,17 +231,31 @@ class FeedProbe:
         return headers, mode
 
     async def fetch(self, client: httpx.AsyncClient, probe_action: str) -> dict:
-        conditional_headers, conditional_mode = self._conditional_headers()
+        conditional_headers, conditional_mode = self._conditional_headers(probe_action)
 
         # The joined URL is built here and never recorded. Endpoints reach the
         # manifest split into base_url + redacted query.
         url = self.cfg["base_url"]
         params = self.cfg.get("query") or None
 
+        # HEAD mode: Last-Modified, ETag and Content-Length carry the cadence
+        # signal at zero body cost. gtfs.de ships ~40 MB uncompressed per GET,
+        # so tracking its ~29s regeneration by GET alone would move several GB
+        # an hour from a volunteer service. Periodic full GETs still feed the
+        # tests that need a body, and a Test C re-poll is always a GET because
+        # it is defined as comparing two bodies.
+        method = self.cfg.get("method", "GET").upper()
+        every_n = self.cfg.get("full_get_every_n")
+        if probe_action.startswith("async_repoll"):
+            method = "GET"
+        elif method == "HEAD" and every_n and (self.seq + 1) % every_n == 0:
+            method = "GET"
+
         await self.limiter.acquire()
 
         self.seq += 1
         started = time.monotonic()
+        self.request_starts.append(started)
         record: dict = {
             "feed": self.id,
             "run": self.run_cfg["run"],
@@ -239,11 +266,12 @@ class FeedProbe:
             "clock_offset_ms": self.clock.offset_ms,
             "clock_sync_failed": self.clock.sync_failed,
             "clock_sync_age_s": self.clock.sync_age_s(started),
+            "method": method,
             "request_headers": filter_headers(conditional_headers, REQUEST_HEADER_ALLOWLIST),
         }
 
         try:
-            response = await client.get(url, params=params, headers=conditional_headers)
+            response = await client.request(method, url, params=params, headers=conditional_headers)
             headers_at = time.monotonic()
             body = response.content
             body_at = time.monotonic()
@@ -311,6 +339,18 @@ class FeedProbe:
         await self.writer.write(record)
         return record
 
+    def effective_interval(self) -> float | None:
+        """Median achieved interval between request starts.
+
+        The configured value is a sleep after completion. What we actually
+        achieved is that plus the fetch duration, and cadence resolution
+        depends on the achieved figure, not the configured one.
+        """
+        if len(self.request_starts) < 3:
+            return None
+        gaps = [b - a for a, b in zip(self.request_starts, self.request_starts[1:])]
+        return round(statistics.median(gaps), 2)
+
     async def handle_limit_response(self, record: dict) -> bool:
         """Circuit breaker. Returns True if the feed should stop for the run.
 
@@ -340,9 +380,9 @@ class FeedProbe:
             try:
                 delay = float(retry_after)
             except ValueError:
-                delay = self.cfg["poll_interval_s"] * 4
+                delay = self.cfg["sleep_after_completion_s"] * 4
         else:
-            base = self.cfg["poll_interval_s"]
+            base = self.cfg["sleep_after_completion_s"]
             delay = min(
                 base * (2 ** self.consecutive_429),
                 self.run_cfg["backoff"]["cap_seconds"],
@@ -381,7 +421,7 @@ class FeedProbe:
                 print(f"[{self.id}] stopping for the run: {self.stopped_reason}")
                 break
 
-            await asyncio.sleep(self.cfg["poll_interval_s"])
+            await asyncio.sleep(self.cfg["sleep_after_completion_s"])
 
         print(f"[{self.id}] done: {self.seq} requests, "
               f"{self.bytes_wire / 1e6:.1f} MB over the wire, "
@@ -500,7 +540,13 @@ def write_manifest(path: Path, cfg: dict, clock: ClockRef, probes: list[FeedProb
                 "base_url": probe.cfg["base_url"],
                 "query": redact_query(probe.cfg.get("query")),
                 "auth": probe.cfg.get("auth"),
-                "poll_interval_s": probe.cfg["poll_interval_s"],
+                # Configured value is a sleep AFTER each request completes, so
+                # the achieved interval is fetch duration + this, never this
+                # alone. Run 1 configured 5s against gtfs.de and achieved ~22s,
+                # because each 40 MB fetch took 12-27s. Both are recorded; the
+                # measured one is what any cadence claim must be judged against.
+                "sleep_after_completion_s": probe.cfg["sleep_after_completion_s"],
+                "effective_interval_s": probe.effective_interval(),
                 "documented_limit": probe.cfg.get("documented_limit"),
                 "self_imposed_ceiling": probe.cfg["self_imposed_ceiling"],
                 "requests_made": probe.seq,

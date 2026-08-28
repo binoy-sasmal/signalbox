@@ -57,7 +57,7 @@ feeds:
     base_url: "https://realtime.gtfs.de/realtime-free.pb"
     query: {}
     auth: none
-    poll_interval_s: 5
+    sleep_after_completion_s: 5
     documented_limit: null
     self_imposed_ceiling: {requests: 15, window_s: 60}
     async_repoll: true
@@ -71,7 +71,7 @@ feeds:
     base_url: "https://production.gtfsrt.vbb.de/data"
     query: {}
     auth: none
-    poll_interval_s: 5
+    sleep_after_completion_s: 5
     documented_limit: {requests: 60, window_s: 60}
     self_imposed_ceiling: {requests: 15, window_s: 60}
     async_repoll: true
@@ -89,7 +89,7 @@ feeds:
     base_url: "https://gtfs.ovapi.nl/nl/tripUpdates.pb"
     query: {}
     auth: none
-    poll_interval_s: 60
+    sleep_after_completion_s: 60
     documented_limit: null
     self_imposed_ceiling: {requests: 2, window_s: 60}
     async_repoll: true

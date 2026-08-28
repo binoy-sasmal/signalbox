@@ -43,7 +43,25 @@ D_MIN_ENTITY_TS_COVERAGE = 0.5
 D_STAIRCASE_MIN_STEPS = 3
 
 # --- Test E ------------------------------------------------------------------
-E_MATCH_TOLERANCE_S = 2.0
+# Relative, not absolute. An absolute tolerance threw away a discriminating
+# result on gtfs.de in run 1: Last-Modified was 3.0s off the header timestamp
+# and Date was 8.5s off -- a clear lean toward generation stamping -- but both
+# exceeded a fixed 2s cut and the test returned unavailable. What matters is
+# which reference is closer, and by how much.
+E_SEPARATION_RATIO = 2.0
+# Floor, by the same argument as the persistence denominator floor: when both
+# references sit within a second of the header timestamp, the comparison is
+# noise and the honest answer is unavailable, not a verdict off sub-second jitter.
+E_NOISE_FLOOR_S = 1.0
+
+# --- Nyquist guard -----------------------------------------------------------
+# A cadence shorter than twice the interval we actually achieved cannot be
+# resolved -- what comes back is our own sampling grid. Independent of the
+# header-timestamp verdict: undersampling and echo stamping are different ways
+# for a cadence figure to be meaningless.
+NYQUIST_FACTOR = 2.0
+GRID_TOLERANCE = 0.15
+GRID_FRACTION = 0.8
 
 # --- entity.id stability -----------------------------------------------------
 # Verdict is taken on id_persistence / semantic_persistence, which is invariant
@@ -402,18 +420,77 @@ def test_e(snapshots: list[Snapshot]) -> dict:
     result = {
         "median_abs_delta_vs_date_s": round(statistics.median(date_deltas), 2) if date_deltas else None,
         "median_abs_delta_vs_last_modified_s": round(statistics.median(lm_deltas), 2) if lm_deltas else None,
-        "tolerance_s": E_MATCH_TOLERANCE_S,
     }
-    tracks_date = bool(date_deltas) and result["median_abs_delta_vs_date_s"] <= E_MATCH_TOLERANCE_S
-    tracks_lm = bool(lm_deltas) and result["median_abs_delta_vs_last_modified_s"] <= E_MATCH_TOLERANCE_S
+    result["separation_ratio_required"] = E_SEPARATION_RATIO
+    result["noise_floor_s"] = E_NOISE_FLOOR_S
 
-    if tracks_date and not tracks_lm:
-        result["verdict"] = "echo"
-    elif tracks_lm and not tracks_date:
+    if not date_deltas or not lm_deltas:
+        result["verdict"] = "unavailable"
+        result["reason"] = "one of the two references was absent"
+        return result
+
+    date_delta = result["median_abs_delta_vs_date_s"]
+    lm_delta = result["median_abs_delta_vs_last_modified_s"]
+
+    if date_delta < E_NOISE_FLOOR_S and lm_delta < E_NOISE_FLOOR_S:
+        result["verdict"] = "unavailable"
+        result["reason"] = (
+            f"both references sit within {E_NOISE_FLOOR_S}s of the header timestamp; "
+            "the comparison is sub-second noise, not a signal"
+        )
+    elif lm_delta * E_SEPARATION_RATIO <= date_delta:
         result["verdict"] = "generation"
+        result["reason"] = "header timestamp tracks Last-Modified far more closely than Date"
+    elif date_delta * E_SEPARATION_RATIO <= lm_delta:
+        result["verdict"] = "echo"
+        result["reason"] = "header timestamp tracks the server's send time"
     else:
         result["verdict"] = "unavailable"
-        result["reason"] = "neither reference matched cleanly, or both did"
+        result["reason"] = (
+            f"the two references are within {E_SEPARATION_RATIO}x of each other; "
+            "neither is clearly closer"
+        )
+    return result
+
+
+def nyquist_check(deltas: list[float], cadence_p50: float | None,
+                  effective_interval: float | None) -> dict:
+    """Can the observed cadence be resolved at the interval we achieved?
+
+    Two independent signals. Either one makes the cadence figure our sampling
+    grid rather than a property of the feed.
+    """
+    result = {
+        "effective_interval_s": effective_interval,
+        "nyquist_limit_s": round(effective_interval * NYQUIST_FACTOR, 2) if effective_interval else None,
+    }
+    if not deltas or cadence_p50 is None or not effective_interval:
+        result["undersampled"] = None
+        return result
+
+    on_grid = [d / effective_interval for d in deltas]
+    grid_fraction = sum(1 for m in on_grid if abs(m - round(m)) <= GRID_TOLERANCE) / len(on_grid)
+    below_nyquist = cadence_p50 < effective_interval * NYQUIST_FACTOR
+
+    result["grid_multiple_fraction"] = round(grid_fraction, 3)
+    result["below_nyquist"] = below_nyquist
+
+    # Nyquist is the sound criterion and the only trigger. Grid clustering is
+    # reported as corroborating evidence but cannot fire on its own: a feed
+    # sampled four times faster than it regenerates also lands every delta on
+    # the grid, and there the cadence figure is correct. Treating clustering as
+    # independent proof flags a feed we are resolving perfectly well.
+    result["undersampled"] = bool(below_nyquist)
+    if below_nyquist:
+        result["reason"] = (
+            f"observed cadence {cadence_p50}s is under {NYQUIST_FACTOR}x the achieved "
+            f"interval {effective_interval}s, so what comes back is our sampling grid"
+        )
+        if grid_fraction >= GRID_FRACTION:
+            result["reason"] += (
+                f"; corroborated by {grid_fraction:.0%} of deltas landing on multiples "
+                "of that interval"
+            )
     return result
 
 
@@ -505,6 +582,16 @@ def analyse_feed(feed_id: str, observations: list[dict], run_dir: Path,
         if snapshot.header_ts and (not distinct_ts or snapshot.header_ts != distinct_ts[-1]):
             distinct_ts.append(snapshot.header_ts)
     deltas = [b - a for a, b in zip(distinct_ts, distinct_ts[1:]) if b > a]
+    # Measured from the observations themselves, so it reflects what we achieved
+    # rather than what the config asked for. Configured value is a sleep after
+    # completion, so a slow fetch silently widens the real interval.
+    scheduled_times = sorted(
+        parse_iso(o["request_at"]) for o in observations
+        if o.get("probe_action") == "scheduled" and o.get("request_at")
+    )
+    request_gaps = [(b - a).total_seconds() for a, b in zip(scheduled_times, scheduled_times[1:])]
+    effective_interval = round(statistics.median(request_gaps), 2) if len(request_gaps) >= 2 else None
+
     cadence = {
         "distinct_header_timestamps": len(distinct_ts),
         "delta_p50_s": statistics.median(deltas) if deltas else None,
@@ -513,6 +600,47 @@ def analyse_feed(feed_id: str, observations: list[dict], run_dir: Path,
         "delta_max_s": max(deltas) if deltas else None,
         "note": "async re-poll fetches excluded; they would corrupt this distribution",
     }
+    # Independent cadence measure from Last-Modified, available on every
+    # observation that carries the header including HEADs. For a feed too
+    # expensive to GET at its true rate this is the only cadence we can afford
+    # to measure honestly, and for the others it cross-checks the header-derived
+    # figure at no extra cost.
+    lm_times: list[float] = []
+    for obs in observations:
+        raw = obs.get("response_headers", {}).get("last-modified")
+        if not raw:
+            continue
+        try:
+            from email.utils import parsedate_to_datetime
+            value = parsedate_to_datetime(raw).timestamp()
+        except Exception:  # noqa: BLE001
+            continue
+        if not lm_times or value != lm_times[-1]:
+            lm_times.append(value)
+    lm_deltas = [b - a for a, b in zip(lm_times, lm_times[1:]) if b > a]
+    last_modified_cadence = {
+        "distinct_values": len(lm_times),
+        "delta_p50_s": statistics.median(lm_deltas) if lm_deltas else None,
+        "delta_min_s": min(lm_deltas) if lm_deltas else None,
+        "delta_max_s": max(lm_deltas) if lm_deltas else None,
+        "note": "Derived from Last-Modified, so HEAD requests contribute. Independent of "
+                "FeedHeader.timestamp and of payload cost.",
+    }
+    # Sampled at the poll rate, not at the rate observations happen to carry the
+    # header. Under conditional requests only a *changed* response returns
+    # Last-Modified, so deriving the interval from those alone would equal the
+    # cadence and trip the Nyquist guard on a feed we are sampling perfectly well.
+    last_modified_cadence["sampling"] = nyquist_check(
+        lm_deltas, last_modified_cadence["delta_p50_s"], effective_interval)
+
+    cadence["sampling"] = nyquist_check(deltas, cadence["delta_p50_s"], effective_interval)
+    if cadence["sampling"].get("undersampled"):
+        cadence["unreliable"] = True
+        cadence["note"] += (
+            ". UNDERSAMPLED: " + cadence["sampling"]["reason"] +
+            ". This figure is our sampling grid, not the feed's cadence. Do not record it "
+            "as a feed property."
+        )
 
     # --- entity counts and churn ---
     entity_counts = collections.Counter()
@@ -651,7 +779,7 @@ def analyse_feed(feed_id: str, observations: list[dict], run_dir: Path,
     # --- gaps and downtime ---
     times = [parse_iso(o["request_at"]) for o in observations if o.get("request_at")]
     times.sort()
-    poll_interval = feed_cfg.get("poll_interval_s", 5)
+    poll_interval = effective_interval or feed_cfg.get("sleep_after_completion_s") or 5
     gaps = [
         {"from": a.isoformat(), "to": b.isoformat(), "seconds": round((b - a).total_seconds(), 1)}
         for a, b in zip(times, times[1:])
@@ -677,6 +805,7 @@ def analyse_feed(feed_id: str, observations: list[dict], run_dir: Path,
         "feed": feed_id,
         "requests": len(observations),
         "status_distribution": dict(status_counts),
+        "methods": dict(collections.Counter(o.get("method", "GET") for o in observations)),
         "conditional_requests": {
             "sent_with_validator": len(with_validator),
             "returned_304": len(not_modified),
@@ -687,6 +816,8 @@ def analyse_feed(feed_id: str, observations: list[dict], run_dir: Path,
                     "advertises validators it does not honour; Gate 5's bytes-saved claim rests here.",
         },
         "cadence": cadence,
+        "last_modified_cadence": last_modified_cadence,
+        "effective_interval_s": effective_interval,
         "payload_bytes": {
             "wire_p50": statistics.median(wire) if wire else None,
             "wire_p95": (sorted(wire)[int(len(wire) * 0.95)] if len(wire) >= 20 else None),

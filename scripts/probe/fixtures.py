@@ -44,7 +44,7 @@ SYNTHETIC_WARNING = (
 
 
 def build(gen_epoch: int, n_entities: int, changing: int,
-          regenerate_ids: bool, turnover: int = 0):
+          regenerate_ids: bool, turnover: int = 0, cadence: int = CADENCE):
     """turnover = entities entering and leaving per generation (sliding window).
 
     A stable-id feed with turnover fraction f has Jaccard persistence
@@ -55,7 +55,7 @@ def build(gen_epoch: int, n_entities: int, changing: int,
     message.header.incrementality = gtfs_realtime_pb2.FeedHeader.FULL_DATASET
     message.header.timestamp = gen_epoch
 
-    window_start = (gen_epoch // CADENCE) * turnover
+    window_start = (gen_epoch // cadence) * turnover
     for offset in range(n_entities):
         index = window_start + offset
         entity = message.entity.add()
@@ -67,12 +67,13 @@ def build(gen_epoch: int, n_entities: int, changing: int,
             trip_update.timestamp = gen_epoch - 2
         stop_time = trip_update.stop_time_update.add()
         stop_time.stop_sequence = 1
-        stop_time.arrival.delay = (gen_epoch // CADENCE) % 7 if offset < changing else 0
+        stop_time.arrival.delay = (gen_epoch // cadence) % 7 if offset < changing else 0
     return message
 
 
 def emit(feed: str, mode: str, n_entities: int, changing: int, regenerate_ids: bool,
-         records: list, blobs: Path, seq_start: int, turnover: int = 0) -> int:
+         records: list, blobs: Path, seq_start: int, turnover: int = 0,
+         cadence: int = CADENCE) -> int:
     seq = seq_start
     elapsed = 0.0
     repolls = list(REPOLL_AT)
@@ -85,8 +86,8 @@ def emit(feed: str, mode: str, n_entities: int, changing: int, regenerate_ids: b
 
         for action, at in actions:
             requested = T0 + timedelta(seconds=at)
-            gen_epoch = int((T0 + timedelta(seconds=(int(at) // CADENCE) * CADENCE)).timestamp())
-            message = build(gen_epoch, n_entities, changing, regenerate_ids, turnover)
+            gen_epoch = int((T0 + timedelta(seconds=(int(at) // cadence) * cadence)).timestamp())
+            message = build(gen_epoch, n_entities, changing, regenerate_ids, turnover, cadence)
             if mode == "echo":
                 message.header.timestamp = int(requested.timestamp())
 
@@ -124,14 +125,19 @@ def emit(feed: str, mode: str, n_entities: int, changing: int, regenerate_ids: b
     return seq
 
 
-#: feed id -> (mode, entities, changing, regenerate_ids, turnover)
+#: feed id -> (mode, entities, changing, regenerate_ids, turnover, cadence_s)
+#
+# undersampled_fast regenerates as fast as we poll, so its cadence cannot be
+# resolved -- the deltas that come back are our sampling grid. It must be
+# flagged regardless of the header-timestamp verdict, which is `generation`.
 FEEDS = {
-    "fake_generation":   ("generation", 50, 15, True, 0),
-    "fake_echo":         ("echo", 50, 15, False, 0),
-    "fake_static":       ("generation", 3, 0, False, 0),
-    "turnover15_stable": ("generation", 50, 15, False, 7),
-    "turnover40_stable": ("generation", 50, 15, False, 20),
-    "turnover15_regen":  ("generation", 50, 15, True, 7),
+    "fake_generation":   ("generation", 50, 15, True, 0, 20),
+    "fake_echo":         ("echo", 50, 15, False, 0, 20),
+    "fake_static":       ("generation", 3, 0, False, 0, 20),
+    "turnover15_stable": ("generation", 50, 15, False, 7, 20),
+    "turnover40_stable": ("generation", 50, 15, False, 20, 20),
+    "turnover15_regen":  ("generation", 50, 15, True, 7, 20),
+    "undersampled_fast": ("generation", 50, 15, False, 0, 5),
 }
 
 
@@ -143,8 +149,9 @@ def build_synthetic_run(root: Path) -> Path:
 
     records: list[dict] = []
     seq = 0
-    for feed, (mode, entities, changing, regenerate, turnover) in FEEDS.items():
-        seq = emit(feed, mode, entities, changing, regenerate, records, blobs, seq, turnover)
+    for feed, (mode, entities, changing, regenerate, turnover, cadence) in FEEDS.items():
+        seq = emit(feed, mode, entities, changing, regenerate, records, blobs, seq,
+                   turnover, cadence)
 
     (run_dir / "observations.jsonl").write_text(
         "\n".join(json.dumps(record) for record in records) + "\n", encoding="utf-8")
@@ -154,7 +161,7 @@ def build_synthetic_run(root: Path) -> Path:
         "warning": SYNTHETIC_WARNING,
         "status": "complete",
         "clock": {"ntp_server": None, "syncs": [], "note": SYNTHETIC_WARNING},
-        "feeds": [{"id": feed, "poll_interval_s": POLL} for feed in FEEDS],
+        "feeds": [{"id": feed, "sleep_after_completion_s": POLL, "effective_interval_s": POLL} for feed in FEEDS],
     }, indent=2), encoding="utf-8")
     return run_dir
 
