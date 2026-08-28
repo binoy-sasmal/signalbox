@@ -253,5 +253,82 @@ class TestDataFilesAreNotFalsePositives(GateTestCase):
         self.assertCaught(path, 1, "auth-shaped key")
 
 
+class TestNumericExemptionCannotBeWidened(GateTestCase):
+    """Regression: the third exemption, held to the same standard as the first two.
+
+    Both earlier exemptions turned out bypassable after the fact, so this one is
+    attacked directly. It must mean "this value parses as a number", not "this
+    value looks numeric" -- an earlier version used float(), which also accepts
+    inf, nan, Infinity and 1_000_000.
+    """
+
+    def test_alphabetic_floats_are_not_exempt(self):
+        for value in ("inf", "nan", "Infinity", "-inf"):
+            with self.subTest(value=value):
+                path = self.write("cfg.yaml", f"api_key: {value}")
+                self.assertCaught(path, 1, "auth-shaped key")
+
+    def test_underscore_separated_digits_are_not_exempt(self):
+        path = self.write("cfg.yaml", "api_key: 1_000_000_000_0")
+        self.assertCaught(path, 1, "auth-shaped key")
+
+    def test_hex_fragment_is_not_exempt(self):
+        for value in ("0x1A2B3C", "deadbeef", "1A2B3C4D"):
+            with self.subTest(value=value):
+                path = self.write("cfg.yaml", f"api_key: {value}")
+                self.assertCaught(path, 1, "auth-shaped key")
+
+    def test_base64_fragment_is_not_exempt(self):
+        path = self.write("cfg.yaml", "api_key: c2VjcmV0Cg==")
+        self.assertCaught(path, 1, "auth-shaped key")
+
+    def test_long_digit_run_is_not_exempt(self):
+        path = self.write("cfg.yaml", "api_key: 1234567890123456")
+        self.assertCaught(path, 1, "auth-shaped key")
+
+    def test_genuine_measurements_stay_exempt(self):
+        self.assertClean(self.write(
+            "analysis.yaml",
+            "median_key_persistence_semantic: 0.998",
+            "median_churn_keyed_on_semantic_key: 0.1544",
+            "entities_key_count: 163819.5",
+            "auth_latency_ms: -1e-5",
+        ))
+
+
+class TestJsonIsCheckedByType(GateTestCase):
+    """JSON types are unambiguous, so the check parses rather than pattern-matches.
+
+    A JSON number under an auth-shaped key cannot be a credential; a JSON string
+    can be, regardless of length or shape.
+    """
+
+    def _json(self, name: str, payload) -> Path:
+        return self.write(name, json.dumps(payload, indent=2))
+
+    def test_numeric_values_under_auth_shaped_keys_pass(self):
+        self.assertClean(self._json("analysis.json", {
+            "feeds": [{
+                "median_key_persistence_semantic": 0.998,
+                "median_churn_keyed_on_semantic_key": 0.1544,
+                "auth": None,
+            }],
+        }))
+
+    def test_string_credential_under_an_auth_shaped_key_is_caught(self):
+        path = self._json("analysis.json", {"feeds": [{"api_key": REAL_KEY}]})
+        self.assertCaught(path, 4, "auth-shaped key")
+
+    def test_a_numeric_string_is_still_a_string(self):
+        """Quoted digits are a string in JSON; the numeric exemption must not apply."""
+        path = self._json("run.json", {"subscription_key": "1234567890123456"})
+        self.assertCaught(path, 2, "auth-shaped key")
+
+    def test_nested_and_redacted_values_pass(self):
+        self.assertClean(self._json("run.json", {
+            "feeds": [{"query": {"apikey": "<redacted:auth_ref>"}, "auth_ref": "ch_key"}],
+        }))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

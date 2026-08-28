@@ -55,7 +55,16 @@ ESCAPE_MARKER = "noqa" + ": " + "secret"
 ESCAPE_MARKER_ALLOWED_IN = "test_check_no_secrets.py"
 
 # Upper bound on the numeric type-exemption; see is_not_a_credential.
+# Keys naming a pointer to a secret rather than holding one. `auth_ref` is the
+# name of a SOPS secret, not its value.
+POINTER_SUFFIXES = ("_ref", "_file", "_path", "_name", "_id")
+
 MAX_NUMERIC_EXEMPT_LEN = 12
+
+# JSON's own number grammar. Deliberately NOT float(), which also accepts
+# inf, nan, Infinity and 1_000_000 -- alphabetic and underscore-bearing
+# strings that are not numbers in any serialisation format we handle.
+JSON_NUMBER = re.compile(r"-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?")
 
 TEXT_SUFFIXES = {
     ".json", ".jsonl", ".yaml", ".yml", ".md", ".toml", ".ini", ".cfg",
@@ -105,23 +114,80 @@ BARE_ASSIGNMENT = re.compile(
 def is_not_a_credential(value: str) -> bool:
     """Values whose type rules them out, whatever the key is called.
 
-    Analysis output is full of auth-shaped field names that hold measurements --
+    Analysis output is full of auth-shaped field names holding measurements --
     `median_key_persistence_semantic`, `median_churn_keyed_on_semantic_key` --
-    and a float is not a secret. Without this the gate fires on its own
+    and a number is not a secret. Without this the gate fires on its own
     evidence files, and a gate that cries wolf on committed data teaches people
     to route around it.
+
+    Strictly parse-based. An earlier version used `float()`, which is not the
+    same question: it accepts `inf`, `nan`, `Infinity` and `1_000_000`, so
+    alphabetic and underscore-bearing strings were being exempted by a check
+    that was supposed to mean "this is a number". JSON's own number grammar is
+    the right test, and the length bound is defence in depth behind it rather
+    than the primary guard.
     """
     value = value.strip().rstrip(",").strip().strip("\"'")
     if value.lower() in {"null", "none", "true", "false", "~", "{}", "[]", "{", "["}:
         return True
-    try:
-        float(value)
-    except ValueError:
+    if not JSON_NUMBER.fullmatch(value):
         return False
-    # Bounded: a measurement is short (0.1544, 163819.5). A long run of digits
-    # could be a numeric token, so the type exemption stops before it becomes a
-    # way to smuggle one past an auth-shaped key.
+    # A measurement is short (0.1544, 163819.5). A long run of digits could be a
+    # numeric token, so the exemption stops before it becomes a way to carry one
+    # past an auth-shaped key in a format we cannot type-check.
     return len(value) <= MAX_NUMERIC_EXEMPT_LEN
+
+
+def walk_json(node, path: str = ""):
+    """Yield (json_path, key, value) for every mapping entry."""
+    if isinstance(node, dict):
+        for key, value in node.items():
+            here = f"{path}.{key}" if path else str(key)
+            yield here, key, value
+            yield from walk_json(value, here)
+    elif isinstance(node, list):
+        for index, value in enumerate(node):
+            yield from walk_json(value, f"{path}[{index}]")
+
+
+def check_json_types(path: Path, raw: str) -> list[Finding] | None:
+    """Type-based auth-key check for JSON, where types are unambiguous.
+
+    Parsing answers the question the line scanner can only approximate: a JSON
+    number, boolean or null under an auth-shaped key cannot be a credential,
+    because credentials travel as strings. Only string values are examined, so
+    no length heuristic is needed here at all.
+    """
+    try:
+        document = json.loads(raw)
+    except json.JSONDecodeError:
+        # Unparseable: return None so the caller falls back to the line
+        # scanner. Returning [] here would mean a malformed .json file got no
+        # auth-key check at all, which is precisely the file most worth checking.
+        return None
+
+    lines = raw.splitlines()
+    findings: list[Finding] = []
+    for json_path, key, value in walk_json(document):
+        if not isinstance(key, str) or not is_auth_param(key) or not isinstance(value, str):
+            continue
+        # Same pointer-suffix exemption the line scanner applies. `auth_ref`
+        # names a SOPS secret; it is the pointer, not the thing pointed at. The
+        # two paths must agree, or a value's safety would depend on which file
+        # format it happened to be written in.
+        if key.lower().endswith(POINTER_SUFFIXES):
+            continue
+        if is_placeholder(value) or not value.strip():
+            continue
+        if value.lower() in {"null", "none", "true", "false"}:
+            continue
+        line = next((i for i, text in enumerate(lines, 1) if f'"{key}"' in text), 0)
+        findings.append(Finding(
+            path, line,
+            f"auth-shaped key '{json_path}' holds a literal string value. Use a "
+            f"SOPS-encrypted secret and an *_ref pointer, or '{REDACTION_PLACEHOLDER}'.",
+        ))
+    return findings
 
 
 def is_placeholder(value: str) -> bool:
@@ -222,7 +288,7 @@ def check_observation_log(path: Path) -> list[Finding]:
     return findings
 
 
-def check_text_file(path: Path) -> list[Finding]:
+def check_text_file(path: Path, auth_key_rule: bool = True) -> list[Finding]:
     findings: list[Finding] = []
     try:
         content = path.read_text(encoding="utf-8")
@@ -256,10 +322,12 @@ def check_text_file(path: Path) -> list[Finding]:
                     "authenticate by query parameter.",
                 ))
 
-        # key: value / key = value in config-shaped files
+        # key: value / key = value in config-shaped files. JSON is excluded:
+        # check_json_types answers the same question by parsing, where types are
+        # unambiguous, so having both would only let them disagree.
         match = re.match(r"""\s*["']?([A-Za-z0-9_.\-]+)["']?\s*[:=]\s*(.+?)\s*$""", line)
-        if match and path.suffix in {".yaml", ".yml", ".json", ".toml", ".ini",
-                                     ".cfg", ".env", ".tfvars"}:
+        if match and auth_key_rule and path.suffix in {".yaml", ".yml", ".json", ".toml",
+                                                       ".ini", ".cfg", ".env", ".tfvars"}:
             name, value = match.group(1), match.group(2).strip().strip("\"'")
             if not is_auth_param(name) or not value:
                 continue
@@ -267,7 +335,7 @@ def check_text_file(path: Path) -> list[Finding]:
                 is_placeholder(value)
                 or is_not_a_credential(value)
                 or value.startswith(("$", "#"))
-                or name.lower().endswith(("_ref", "_file", "_path", "_name", "_id"))
+                or name.lower().endswith(POINTER_SUFFIXES)
             )
             if not benign:
                 findings.append(Finding(
@@ -286,9 +354,20 @@ def scan(paths: list[Path]) -> tuple[list[Finding], int]:
         if not path.is_file() or path.suffix not in TEXT_SUFFIXES:
             continue
         checked += 1
+        auth_key_rule = True
         if path.suffix == ".jsonl":
             findings.extend(check_observation_log(path))
-        findings.extend(check_text_file(path))
+        elif path.suffix == ".json":
+            try:
+                typed = check_json_types(path, path.read_text(encoding="utf-8"))
+            except OSError:
+                typed = None
+            if typed is not None:
+                # Parsed cleanly, so types settle it and the line scanner's
+                # approximation of the same rule stands down.
+                findings.extend(typed)
+                auth_key_rule = False
+        findings.extend(check_text_file(path, auth_key_rule=auth_key_rule))
     return findings, checked
 
 
