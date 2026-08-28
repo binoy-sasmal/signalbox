@@ -1,0 +1,74 @@
+{
+  "run": "run2b",
+  "status": "complete",
+  "started_at": "2026-08-28T22:03:13.998858+00:00",
+  "ended_at": "2026-08-28T22:28:22.545858+00:00",
+  "observation_count": 149,
+  "user_agent": "signalbox-probe/0.1 (Stage 0 feed feasibility spike; contact: binoysasmal@yahoo.com)",
+  "clock": {
+    "ntp_server": "pool.ntp.org",
+    "syncs": [
+      {
+        "label": "start",
+        "at": "2026-08-28T22:03:14.076858+00:00",
+        "offset_ms": -1006.7539215087891,
+        "sync_failed": false,
+        "detail": null
+      },
+      {
+        "label": "mid",
+        "at": "2026-08-28T22:15:44.529858+00:00",
+        "offset_ms": -1000.9231567382812,
+        "sync_failed": false,
+        "detail": null
+      },
+      {
+        "label": "end",
+        "at": "2026-08-28T22:28:22.545858+00:00",
+        "offset_ms": -1005.7942867279053,
+        "sync_failed": false,
+        "detail": null
+      }
+    ],
+    "note": "Offsets are recorded, not applied. null means sync failed; never read as zero."
+  },
+  "coverage": {
+    "coverage": 0.9986,
+    "polling_seconds": 1498.0,
+    "lost_seconds": 0,
+    "gap_threshold_s": 60.0,
+    "gap_count": 0,
+    "largest_gap_s": 0.0,
+    "minimum_required": 0.9
+  },
+  "platform": {
+    "python": "3.12.5 (tags/v3.12.5:ff3bc82, Aug  6 2024, 20:45:27) [MSC v.1940 64 bit (AMD64)]",
+    "platform": "win32",
+    "sleep_suppression_requested": true
+  },
+  "feeds": [
+    {
+      "id": "ovapi_tripupdates",
+      "base_url": "https://gtfs.ovapi.nl/nl/tripUpdates.pb",
+      "query": {},
+      "auth": "none",
+      "sleep_after_completion_s": 10,
+      "effective_interval_s": 10.09,
+      "documented_limit": null,
+      "self_imposed_ceiling": {
+        "requests": 10,
+        "window_s": 60
+      },
+      "requests_made": 149,
+      "bytes_wire_total": 0,
+      "bytes_decompressed_total": 0,
+      "status_counts": {
+        "200": 26,
+        "304": 123
+      },
+      "stopped_reason": null,
+      "final_ceiling_requests": 10,
+      "notes": "HEAD only. No full GETs are scheduled: run 2 already collected 61 bodies and settled the header-timestamp verdict and entity analysis, so this run needs only Last-Modified. That keeps a volunteer-run service's cost at essentially zero for the 25 minutes."
+    }
+  ]
+}

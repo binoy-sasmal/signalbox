@@ -172,21 +172,53 @@ the coverage check that run 2's void attempt caused to exist.
 |---|---|---|---|---|---|---|---|
 | `vbb` | 562 | **29.0s** | 70.0% | 0 | 8,309 | generation `[moderate, 2/5]` | 0% |
 | `hsl_tripupdates` | 590 | **15.0s** | 58.6% | 3 | 1,261 | generation `[moderate, 2/5]` | 0% |
-| `ovapi_tripupdates` | 61 | 60s ⚠ (resolved in 2b) | **0.0%** | 0 | 10,932 | generation `[strong, 4/5]` | 0% |
-| `hsl_vehiclepositions` | 1492 | 2.0s ⚠ | 0.2% | 0 | 849 | generation `[weak, 1/5]` | 0% |
+| `ovapi_tripupdates` | 61 | 60s ⚠ (resolved in 2b) | n/a¹ | 0 | 10,932 | generation `[strong, 4/5]` | 0% |
+| `hsl_vehiclepositions` | 1492 | 2.0s ⚠ | n/a¹ | 0 | 849 | generation `[weak, 1/5]` | 0% |
+
+¹ Sampled at or slower than the cadence, so a 304 was structurally impossible and the rate is
+uninterpretable. See the correction below. OVapi's was resolved in run 2b; `hsl_vehiclepositions`'
+remains unmeasured.
 
 Achieved intervals tracked their configured values throughout (5.16s / 61.79s / 5.17s / 2.39s), so
 none of these cadence figures is distorted by slow fetches the way gtfs.de's was.
 
-#### OVapi does not honour conditional requests — closed question
+#### CORRECTED: OVapi *does* honour conditional requests — and the first answer was a confound
 
-**0 of 77 responses were 304**, across both runs (16 in run 1, 61 in run 2), every one of them
-carrying `If-None-Match` and `If-Modified-Since`. Not a small sample and not ambiguous.
+**An earlier version of this file recorded the opposite, with a Gate 5 consequence attached. It was
+wrong, and the way it was wrong is the more useful finding.**
 
-**Gate 5 consequence:** there are **no conditional-request savings available for this tenant**. Every
-poll costs a full body. Any bytes-saved figure quoted for the platform must exclude OVapi, and its
-poll interval has to be chosen on bandwidth grounds alone, because there is no cheap "nothing
-changed" answer to lean on.
+Runs 1 and 2 polled OVapi at ~62s and saw **0 of 77 responses return 304**, every request carrying
+both validators. That looked conclusive. Run 2b polled the same endpoint at 10s and saw **123 of 149
+return 304 — 82.6%**.
+
+The cadence is exactly 60s. Polling at ~62s means every request lands after a new generation, so
+**a 304 was never possible**: the server had genuinely new content to send every time we asked. The
+test had no opportunity to fire, and its silence was read as a result.
+
+**A 304 rate is only interpretable when we poll more than once per generation.** The theoretical
+ceiling is `1 − 1/(cadence ÷ sampling interval)`, and every measurement we have sits just under it:
+
+| Feed | Sampling | Cadence | Polls/generation | Max possible 304 | Observed |
+|---|---|---|---|---|---|
+| `vbb` | 5.16s | 29.0s | 5.62 | 82% | 70.0% |
+| `hsl_tripupdates` | 5.17s | 15.0s | 2.90 | 66% | 58.6% |
+| `ovapi` (run 2b) | 10.09s | 60.0s | 5.95 | 83% | **82.6%** |
+| `ovapi` (runs 1–2) | 61.79s | 60.0s | **0.97** | **0% — impossible** | 0.0% |
+| `hsl_vehiclepositions` | 2.39s | ~2.0s | **0.84** | **0% — impossible** | 0.2% |
+
+**`hsl_vehiclepositions`' 0.2% is confounded in exactly the same way** and is corrected here too: its
+conditional-request behaviour is **unmeasured**, not measured-as-zero. Same host as
+`hsl_tripupdates`, which honours validators at 58.6%, so the likely answer is that it does — but
+likely is not measured, and this file holds measured numbers.
+
+**The generalisation.** This is Nyquist again, applied to a second quantity: *sampling at or near the
+cadence destroys the information you are trying to collect*. The analyser already refuses to report
+a cadence below Nyquist — but it happily reported a 304 rate from a sampling regime in which no 304
+could ever occur, and produced a confident, actionable, wrong conclusion from 77 observations.
+Volume of evidence is no defence when the measurement was structurally incapable of the answer.
+
+**No Gate 5 consequence stands.** The earlier claim that OVapi offers no conditional-request savings
+was false; at adequate sampling it saves as much as any other feed here.
 
 #### The false-200 check fires on real data
 
@@ -208,6 +240,27 @@ cadence, three of the five tests have preconditions that a feed that fast cannot
 no entity timestamps to work with, Test B needs a cadence spanning more than two one-second
 quantisation levels, and Test C needs a re-poll gap shorter than the cadence. Recording it as
 `generation [weak, 1/5]` rather than plain `generation` is the honest form — see ADR 0004 §8.
+
+---
+
+### Run 2b — 2026-08-29, OVapi cadence by HEAD
+
+Run 2 left OVapi's cadence below Nyquist and therefore unresolved, which put Gate 0 on an
+interpretation. This run removed the question rather than arguing it.
+
+**24.9 minutes, 149 requests, 0.00 MB over the wire, coverage 99.9%.** HEAD only — no bodies at all.
+
+| | |
+|---|---|
+| **Cadence** | **60.0s exactly** — p50 60, min 60, max 60, **stdev 0.00s**, n=25 |
+| Sampling | 10.09s achieved, Nyquist limit 20.18s → **resolvable, not flagged** |
+| Conditional requests | **82.6% 304** (123 of 149), against a theoretical ceiling of 83% |
+| Cost | zero body bytes |
+
+OVapi is metronomic: twenty-five consecutive 60-second intervals with no variance whatsoever. That
+is a stronger cadence result than any other feed here, and it cost nothing.
+
+It also corrected a wrong finding — see below.
 
 ---
 
@@ -330,35 +383,51 @@ carry into the next run.
 
 ---
 
-### Gate 0 status — **not passed**
+### Gate 0 — **PASSED**, 2026-08-29
 
-Against the criteria in PLAN.md section 6.6, written before any of these numbers existed:
+Against the three "usable for ingest" criteria in PLAN.md section 6.6, which is now the sole
+definition — section 6.7 defers to it rather than restating it, after the two diverged (ADR 0004 §9).
 
-| Feed | Parses reliably | Update behaviour characterised | Conditional requests characterised | **Usable for ingest** | `generation`? | **Usable for freshness SLO** |
+| Feed | 1. Parses reliably | 2. Update behaviour | 3. Conditional requests | **Ingest** | Header timestamp | **Freshness SLO** |
 |---|---|---|---|---|---|---|
-| vbb | yes (0%) | yes — cadence resolvable | yes, with the degradation caveat | **yes** | yes | **yes** |
-| ovapi_tripupdates | yes (0%) | partial — undersampled, reason recorded | **no** — 16 requests, unresolved | **not yet** | yes | pending |
-| gtfs_de | yes (0%) | yes — 30s by HEAD, n=119 | yes | characterised, **excluded on resource grounds** | yes | n/a |
+| `vbb` | 0% failures | **29.0s measured** | 70.0% 304, 0 false-200 | **yes** | generation `[moderate, 2/5]` | yes |
+| `hsl_tripupdates` | 0% failures | **15.0s measured** | 58.6% 304, 3 false-200 | **yes** | generation `[moderate, 2/5]` | yes |
+| `ovapi_tripupdates` | 0% failures | **60.0s measured** (2b) | 82.6% 304 (2b) | **yes** | generation `[strong, 4/5]` | yes |
+| `hsl_vehiclepositions` | 0% failures | ~2s, undersampled — reason recorded | **unmeasured** (confounded) | not counted | generation `[weak, 1/5]` | — |
+| `gtfs_de` | 0% failures | 30.0s measured | 41.5% 304 | **excluded on resource grounds** | generation | n/a |
 
-**One feed clears the ingest bar.** Gate 0 requires three.
+**Three feeds meet all three criteria, and all three have a genuinely measured cadence.** The gate
+passes under either the strict or the permissive reading of the original wording, so no
+interpretation was required — which was the point of running 2b rather than arguing the case.
 
-**The path to three no longer runs through any API key.** HSL is keyless (above), so the three
-candidates are **vbb** (already usable), **ovapi_tripupdates** (needs a full hour to resolve its
-conditional-request behaviour) and **hsl_tripupdates** (uncharacterised, 1.27 MB, affordable to
-sample properly). One clean hour with those three can close Gate 0.
+All three also carry `header_timestamp_trust: generation`, so `feed_freshness` (ADR 0002) is
+applicable to each, with evidence strength recorded alongside the verdict.
 
-opentransportdata.swiss is no longer the critical path. It stays valuable — it is the only candidate
-that forces real per-tenant secret handling and a real rate limiter, which is exactly what Stage 2
-and Stage 3 need — but it is now a fourth tenant rather than a blocker.
+**Deliberately not counted toward the gate:**
 
----
+- **`hsl_vehiclepositions`** clears criteria 1 and 2 but its conditional-request behaviour is
+  confounded by sampling, so criterion 3 is unmeasured. It is a usable *feed* — 1492 requests, 0%
+  parse failures, and the only high-frequency workload characterised — but it does not clear the bar
+  as written, and three feeds already do. Resolving it needs a run sampling faster than ~1s.
+- **`gtfs_de`** is fully characterised and would clear every criterion, but is excluded as a tenant
+  on measured resource grounds. A feed we will not run is not evidence that we can run three.
+
+**What the gate does not claim.** Nothing here has been ingested, stored or served. Gate 0 asked
+whether at least three feeds are usable and what their behaviour is, and that question is answered.
+Whether the ingest service can actually keep up with them is Gate 5.
 
 ## Still unmeasured
 
-- HSL (FI): everything. Endpoint and key-status resolved, nothing measured yet.
-- OVapi conditional-request behaviour over a full hour.
-- opentransportdata.swiss (CH): needs an API key. No longer blocking Gate 0.
-- HSL licence and attribution string, from a primary source a browser can open.
+- **`hsl_vehiclepositions` conditional-request behaviour** — needs sampling faster than its ~1s
+  cadence to be measurable at all; at 2.39s a 304 is structurally impossible.
+- **`hsl_vehiclepositions` cadence** — resolving a 1s cadence needs sustained 2+ requests/second,
+  which is not a reasonable ask of a public API. "Updates at least every 2s" is what the data
+  supports.
+- **opentransportdata.swiss (CH)** — needs an API key. Not blocking; a fourth tenant whose value is
+  that it forces real per-tenant secret handling and a real rate limiter for Stage 2 and Stage 3.
+- **OVapi licence** — deliberately `unresolved`; see the finding above.
+- Ingest memory sizing: single-message decode peak × queue depth × safety factor, to be measured in
+  a Linux container so architecture is the only remaining confound.
 - Ingest memory sizing: single-message decode peak × queue depth × safety factor, to be measured in
   a Linux container so architecture is the only remaining confound.
 - Everything from Stage 1 onward: rebuild drill time, onboarding manual-step count, Prometheus

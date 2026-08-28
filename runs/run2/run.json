@@ -1,0 +1,145 @@
+{
+  "run": "run2",
+  "status": "complete",
+  "started_at": "2026-08-28T15:16:19.100601+00:00",
+  "ended_at": "2026-08-28T16:17:21.209601+00:00",
+  "observation_count": 2705,
+  "user_agent": "signalbox-probe/0.1 (Stage 0 feed feasibility spike; contact: binoysasmal@yahoo.com)",
+  "clock": {
+    "ntp_server": "pool.ntp.org",
+    "syncs": [
+      {
+        "label": "start",
+        "at": "2026-08-28T15:16:19.147601+00:00",
+        "offset_ms": -1141.8850421905518,
+        "sync_failed": false,
+        "detail": null
+      },
+      {
+        "label": "mid",
+        "at": "2026-08-28T15:46:19.615601+00:00",
+        "offset_ms": -1127.4919509887695,
+        "sync_failed": false,
+        "detail": null
+      },
+      {
+        "label": "end",
+        "at": "2026-08-28T16:17:21.209601+00:00",
+        "offset_ms": -1110.0070476531982,
+        "sync_failed": false,
+        "detail": null
+      }
+    ],
+    "note": "Offsets are recorded, not applied. null means sync failed; never read as zero."
+  },
+  "coverage": {
+    "coverage": 0.9994,
+    "polling_seconds": 3598.0,
+    "lost_seconds": 0,
+    "gap_threshold_s": 180,
+    "gap_count": 0,
+    "largest_gap_s": 0.0,
+    "minimum_required": 0.9
+  },
+  "platform": {
+    "python": "3.12.5 (tags/v3.12.5:ff3bc82, Aug  6 2024, 20:45:27) [MSC v.1940 64 bit (AMD64)]",
+    "platform": "win32",
+    "sleep_suppression_requested": true
+  },
+  "feeds": [
+    {
+      "id": "vbb",
+      "base_url": "https://production.gtfsrt.vbb.de/data",
+      "query": {},
+      "auth": "none",
+      "sleep_after_completion_s": 5,
+      "effective_interval_s": 5.16,
+      "documented_limit": {
+        "requests": 60,
+        "window_s": 60
+      },
+      "self_imposed_ceiling": {
+        "requests": 15,
+        "window_s": 60
+      },
+      "requests_made": 562,
+      "bytes_wire_total": 353873646,
+      "bytes_decompressed_total": 1548963800,
+      "status_counts": {
+        "200": 172,
+        "304": 390
+      },
+      "stopped_reason": null,
+      "final_ceiling_requests": 15,
+      "notes": "Run 1 achieved a 5.12s interval against a 16s cadence, comfortably above Nyquist, so this is the one feed whose cadence is already a measured property rather than a sampling artefact. Degraded since 2026-06-04: its 64% 304 rate is inflated by a frozen upstream and is not a clean bytes-saved figure."
+    },
+    {
+      "id": "ovapi_tripupdates",
+      "base_url": "https://gtfs.ovapi.nl/nl/tripUpdates.pb",
+      "query": {},
+      "auth": "none",
+      "sleep_after_completion_s": 60,
+      "effective_interval_s": 61.79,
+      "documented_limit": null,
+      "self_imposed_ceiling": {
+        "requests": 2,
+        "window_s": 60
+      },
+      "requests_made": 61,
+      "bytes_wire_total": 118270544,
+      "bytes_decompressed_total": 328160963,
+      "status_counts": {
+        "200": 61
+      },
+      "stopped_reason": null,
+      "final_ceiling_requests": 2,
+      "notes": "60s answers the open question about this feed -- whether validators are honoured -- because a GET with validators is what detects a false-200, and run 1 saw 0% 304 with one false-200 across only 16 requests. 60 samples settles it. ACCEPTED TRADE: at 60s the cadence stays below Nyquist and will again be flagged unresolved. Resolving it would need either far more GETs from a volunteer service, or HEAD sampling that cannot detect a false-200. Gate 0 does not depend on it."
+    },
+    {
+      "id": "hsl_tripupdates",
+      "base_url": "https://realtime.hsl.fi/realtime/trip-updates/v2/hsl",
+      "query": {},
+      "auth": "none",
+      "sleep_after_completion_s": 5,
+      "effective_interval_s": 5.17,
+      "documented_limit": null,
+      "self_imposed_ceiling": {
+        "requests": 15,
+        "window_s": 60
+      },
+      "requests_made": 590,
+      "bytes_wire_total": 265630581,
+      "bytes_decompressed_total": 265630581,
+      "status_counts": {
+        "200": 247,
+        "304": 343
+      },
+      "stopped_reason": null,
+      "final_ceiling_requests": 15,
+      "notes": "Documented 15s cadence, 1.27 MB. 5s sampling puts Nyquist at 10s, below the documented cadence, so unlike gtfs.de this feed's cadence should resolve. Worst case if validators are ignored is ~914 MB/hour; ETag, Last-Modified and Cache-Control max-age=5 are all present, so most responses should be 304 and the real figure far lower."
+    },
+    {
+      "id": "hsl_vehiclepositions",
+      "base_url": "https://realtime.hsl.fi/realtime/vehicle-positions/v2/hsl",
+      "query": {},
+      "auth": "none",
+      "sleep_after_completion_s": 2,
+      "effective_interval_s": 2.39,
+      "documented_limit": null,
+      "self_imposed_ceiling": {
+        "requests": 35,
+        "window_s": 60
+      },
+      "requests_made": 1492,
+      "bytes_wire_total": 152416090,
+      "bytes_decompressed_total": 152416090,
+      "status_counts": {
+        "200": 1489,
+        "304": 3
+      },
+      "stopped_reason": null,
+      "final_ceiling_requests": 35,
+      "notes": "The high-frequency shape. Documented 1s cadence at 122 KB, a workload unlike anything characterised so far (vbb 16s, ovapi <=60s, gtfs.de 30s), and the only candidate that will actually exercise a bounded queue before Gate 5 designs its backpressure. KNOWN LIMIT, recorded up front: 2s sampling puts Nyquist at 4s, so a genuine 1s cadence CANNOT be resolved and the analyser will correctly flag it. Resolving 1s would need sustained 2+ requests/second for an hour, which is not a reasonable ask of a public API. The measurable claim is \"updates at least every 2s\", read off the 200-vs-304 pattern, and that is sufficient to size a queue. Worst case ~220 MB/hour."
+    }
+  ]
+}
