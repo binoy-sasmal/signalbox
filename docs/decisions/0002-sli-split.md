@@ -93,3 +93,10 @@ Ingest pipeline success rate stays our fault domain and keeps carrying the error
   be applied without one. This is now a first-class tenant schema field (PLAN.md section 4).
 - SLO targets stay provisional until two weeks of real data exist. Unchanged from the original
   plan, and the split does not license inventing targets any earlier.
+- **The provisional target comes from measured cadence, never from the provider's documentation.**
+  Stage 0 found gtfs.de documenting 10-second updates and delivering ~30 — wrong by 3×, in the
+  direction that would have burned freshness budget continuously while nothing was broken. See
+  "Vendor documentation was wrong about cadence by 3×" in `docs/metrics.md`. This binds every
+  tenant, not only the one that produced it: cadence is measured at onboarding, cheaply, by HEAD
+  against `Last-Modified`, and the measured figure is what `feed_freshness` is calibrated to. A
+  documented cadence is a hypothesis, and a cheap one to test.

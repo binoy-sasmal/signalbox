@@ -66,6 +66,32 @@ it stays visible. HTTP `Date` alone, at 1-second resolution, could not have dete
 
 ### Findings
 
+#### Vendor documentation was wrong about cadence by 3×, and this generalises
+
+**gtfs.de documents 10-second updates and delivers ~30.** Measured by HEAD against `Last-Modified`:
+p50 **30s**, min 26s, max 34s. The documented figure is unambiguous — *"Er wird alle 10 Sekunden
+aktualisiert"* — and it is off by a factor of three.
+
+This is the single most transferable finding in Stage 0, and it is **not** about the feed we are
+dropping. It applies to every tenant we will ever onboard:
+
+- **An SLO target set from vendor documentation would have been wrong before a single datapoint
+  arrived.** A freshness objective calibrated to a 10s upstream, against a feed that regenerates
+  every 30s, would burn its error budget continuously while nothing was broken.
+- **It would have been wrong in the safe-looking direction.** Documentation understating cadence
+  makes a system look worse than it is; overstating it makes an alert threshold too loose to fire.
+  Neither is detectable without measuring.
+- **The measurement was nearly free.** Nine HEAD requests, zero body bytes, established it in 80
+  seconds — against a GET-based approach that spent 1.2 GB and still could not resolve the cadence,
+  because 17.8s sampling cannot see a 30s period.
+
+Consequence, recorded in ADR 0002: **provisional SLO targets are set from measured cadence per
+tenant, never from a provider's stated figure**, and the measured value is re-derived at onboarding
+rather than assumed to hold. The plan already said targets recalibrate after two weeks of real data;
+this says the *starting* target may not come from documentation either.
+
+
+
 #### gtfs.de is characterised and **excluded as a tenant**, on measured resource grounds
 
 Not a gap in the probe. A documented rejection with arithmetic behind it.
