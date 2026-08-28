@@ -1,0 +1,71 @@
+# Stage 0 -- run 1b: complete the gtfs.de characterisation cheaply.
+#
+# Run 1 established that gtfs.de ships ~37-48 MB per fetch UNCOMPRESSED (it is
+# the only probed feed that does not gzip), and that its real regeneration
+# cadence is ~29s, not the documented 10s. Tracking that by GET would move
+# several GB an hour from a free community service.
+#
+# So: HEAD carries the cadence signal at zero body cost -- Last-Modified, ETag
+# and Content-Length are all present on a HEAD -- and a small number of full
+# GETs feed the tests that genuinely need a body.
+#
+# Expected cost: ~10 GETs x ~40 MB = ~400 MB, plus ~350 HEADs at header size.
+# Compare with ~5-9.6 GB/hour for GET-based tracking of a 29s cadence.
+#
+# This run completes the characterisation. It does not make gtfs.de a tenant:
+# the resource arithmetic in docs/metrics.md excludes it on measured grounds.
+
+run: run1b
+duration_minutes: 60
+
+user_agent: "signalbox-probe/0.1 (Stage 0 feed feasibility spike; contact: selil23188@archifun.com)"
+accept_encoding: "gzip, deflate"
+
+kill_switch_file: "STOP"
+output_root: "runs"
+
+timeouts:
+  connect_s: 5
+  # Run 1 saw a 40 MB GET take 27s and two RemoteProtocolError disconnects. A
+  # 20s ceiling was cutting into legitimate responses.
+  total_s: 60
+
+# Both re-poll fetches are always full GETs regardless of HEAD mode: Test C is
+# defined as comparing two bodies. They also send no validators, because a 304
+# has no body -- run 1 lost Test C on two of three feeds exactly that way.
+async_repoll:
+  gap_seconds: 2
+  at_minutes: [15, 40]
+
+backoff:
+  cap_seconds: 900
+  consecutive_429_to_stop: 3
+
+static_content_guard:
+  min_median_entities: 10
+  min_median_semantic_churn: 0.05
+
+feeds:
+  - id: gtfs_de
+    base_url: "https://realtime.gtfs.de/realtime-free.pb"
+    query: {}
+    auth: none
+    method: HEAD
+    # Every 60th request is a full GET: ~6 spaced GETs, plus the 4 from the two
+    # re-poll pairs, is the ~10 bodies the timestamp and entity tests need.
+    full_get_every_n: 60
+    sleep_after_completion_s: 10
+    documented_limit: null
+    self_imposed_ceiling: {requests: 10, window_s: 60}
+    async_repoll: true
+    licence: "CC-BY-SA-4.0"
+    attribution: "gtfs.de"
+    licence_sources:
+      - "https://gtfs.de/de/realtime/"
+    licence_checked: "2026-08-28"
+    notes: >-
+      10s HEAD sampling against a measured ~29s cadence is a ~3x oversample, so
+      the Last-Modified cadence is resolvable where the run-1 GET cadence was
+      not (17.8s achieved interval against a 30s observed cadence, under
+      Nyquist). Documented cadence is 10s; measured is ~29s, and the measured
+      figure is the one that goes in metrics.md.

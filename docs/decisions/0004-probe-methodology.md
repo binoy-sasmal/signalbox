@@ -76,21 +76,72 @@ Verified against synthetic fixtures with known ground truth, including the 40%-t
 broke the previous measure. Stable and regenerating fixtures with *identical* turnover and identical
 semantic persistence separate 1.00 against 0.00.
 
-### 5. Clock discipline
+### 5. Cadence is only a feed property if we sampled fast enough for it
+
+**Nyquist rule: if the observed cadence is under twice the interval we actually
+achieved, the figure is our sampling grid and is flagged unreliable.** Independent of the
+header-timestamp verdict — undersampling and echo stamping are different ways for the same number
+to be meaningless, and the analyser originally only flagged the second.
+
+The interval compared against is **measured, not configured.** The configured value is a sleep
+*after* each request completes, so a slow fetch silently widens the real interval: run 1 configured
+5s against gtfs.de and achieved 17.8s, because each 40 MB fetch took 12–27s. Both are recorded; the
+measured one is what any cadence claim is judged against.
+
+**Grid-multiple clustering is corroborating evidence only, never an independent trigger.** It was
+specified as one, and measurement showed it is unsound in both directions: it scored 0.0 on
+gtfs.de — the worst real case — while flagging fixtures we were sampling four times faster than
+they regenerate, where the cadence figure is correct. A feed whose period is a multiple of our
+interval lands every delta on the grid legitimately. Nyquist caught both real cases; clustering is
+reported because it is informative when it agrees.
+
+**A second cadence measure comes from `Last-Modified`**, which is available on HEAD responses. For
+a feed too expensive to GET at its true rate this is the only cadence we can afford to measure
+honestly; for the others it cross-checks the header-derived figure at no cost. It is sampled at the
+poll rate, not at the rate observations happen to carry the header — under conditional requests only
+a *changed* response returns `Last-Modified`, so deriving the interval from those alone would equal
+the cadence and trip the guard on a feed sampled perfectly well.
+
+### 6. Test E compares the two references to each other, with a floor
+
+An absolute tolerance discarded a discriminating result: on gtfs.de, `Last-Modified` sat 3.0s from
+the header timestamp and `Date` 8.5s — a clear lean toward generation stamping — but both exceeded
+a fixed 2s cut and the test returned `unavailable`. What matters is which reference is closer and by
+how much, so the verdict now requires one to be at least **2× closer** than the other.
+
+**Floor: if both references sit within 1s of the header timestamp, the answer is `unavailable`.**
+Same argument as the id-stability denominator floor — below that separation the comparison is
+sub-second jitter, and a verdict taken off it would be invented rather than measured.
+
+### 7. Test C never sends validators, and is unreliable on slow feeds
+
+Test C is defined as comparing two *bodies*. A 304 has none, so sending conditional headers on a
+re-poll destroys the test rather than economising on it. Run 1 lost Test C on two of three feeds
+exactly that way — both re-polls returned 304. Re-poll requests now send no validators and are
+always full GETs even in HEAD mode.
+
+A separate limit is structural and not worth fixing: the re-poll gap is measured from the completion
+of the first fetch, so on a feed where a fetch takes 20s the two observations are ~22s apart, not
+2s. Against gtfs.de's ~29s cadence the pair frequently straddles a generation. Closing that would
+mean issuing both requests concurrently, which would break the single-flight property that keeps our
+request rate honest. Test C is therefore expected to be unavailable on large, slow feeds, and those
+verdicts rest on the remaining tests.
+
+### 8. Clock discipline
 
 Wall clock anchored once; every interval from a monotonic base. NTP offset is **recorded, not
 applied**, so the correction stays visible and reversible. A failed sync records `null` with a flag
 and **never zero** — a silent zero is a fabricated measurement that would lend unearned precision to
 every derived lag figure. HTTP `Date` provides an independent per-request reference.
 
-### 6. No deliberate rate-limit provocation, on any feed
+### 9. No deliberate rate-limit provocation, on any feed
 
 A 429 is recorded in full if it arrives, but we do not chase one. VBB is degraded, so provoking it
 would perturb an upstream that is not behaving normally; CH holds a revocable key whose loss costs
 the project a real capability. Section 6 of the plan originally called for approaching the documented
 limit; that was dropped.
 
-### 7. One endpoint is one feed id
+### 10. One endpoint is one feed id
 
 Every timestamp test assumes one feed is one message stream. OVapi alone exposes four endpoints
 (`tripUpdates`, `vehiclePositions`, `alerts`, `trainUpdates`) which may stamp differently. Two
@@ -98,7 +149,7 @@ config entries sharing an id would interleave two streams into a single verdict 
 plausible and was meaningless. The poller rejects duplicate ids and non-string `base_url` at
 startup.
 
-### 8. Credential capture is structural
+### 11. Credential capture is structural
 
 Headers by explicit allow-list, dropped at capture rather than redacted after. Endpoints stored
 split into `base_url` plus a query map, never joined, because some transit APIs authenticate by
