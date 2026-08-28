@@ -116,14 +116,50 @@ sample at a rate that actually resolves a 15s cadence — the thing gtfs.de made
 for the deprecation, [HSL GTFS-RT feeds](https://hsldevcom.github.io/gtfs_rt/) for the endpoints and
 cadences. *Checked:* 2026-08-28.
 
-**Licence: CC BY 4.0 indicated, not verified.** [Digitransit's terms of
-use](https://digitransit.fi/en/developers/apis/7-terms-of-use/) state *"Creative Commons name 4.0
-(CC BY) licensing"* requiring attribution *"(for example © Digitransit 2021)"* — but those terms are
-scoped to *registered* `api.digitransit.fi` usage, which is the deprecated path we are not using.
-HSL's own open-data page returns **HTTP 403 to automated fetch**, so the primary source could not be
-read. **A human should open `https://www.hsl.fi/en/hsl/open-data` and confirm the licence and exact
-attribution string before HSL is onboarded as a tenant.** Recorded as `unverified` until then, the
-same treatment as the two OCI caveats.
+**Licence: `CC-BY-4.0`, verified 2026-08-28** from HSL's Terms of Use, read in a browser after the
+page returned HTTP 403 to automated fetch:
+
+> *"All data sets and APIs (with the exception of the Journey Planner OSM data listed below) are
+> licensed under Creative Commons BY 4.0 International Licence (as of 1 September 2015). When using
+> the data, please cite the Licensee and the time when HSL delivered the data (e.g. © HSL 2016)."*
+
+**Attribution: `© HSL <year of delivery>`.** The worked example fixes this at year granularity, so
+there is **no per-row obligation** — we already retain a fetch timestamp per observation and that
+more than satisfies it.
+
+**The ODbL exception does not reach GTFS-RT.** It is scoped to *"the Journey Planner's data geometry
+and address data based on OpenStreetMap"*, applying *"to part of the routing, geocoding and map API
+data"* — the journey-planner APIs. Trip updates and vehicle positions are HSL's own operational
+data. The other carve-out, city bike OD data owned by City Bike Finland, is unrelated to us.
+
+**Schema note: this attribution string is not static.** `© HSL 2026` goes stale at year end. Every
+other `attribution` value recorded so far is a fixed string, so the field has been treated as a
+literal. At least one real tenant needs it to be a template. Flagged for the Stage 2 schema, not
+solved here.
+
+---
+
+### Run 2 — 2026-08-28, **VOID**
+
+Four keyless endpoints, one hour. **Discarded: 6.3% coverage.**
+
+The machine slept for **56.2 minutes of the 60-minute window**, leaving 3.8 minutes of actual
+polling across 165 observations. Sleep suppression had reported itself asserted;
+`SetThreadExecutionState` prevents idle sleep but not lid-close, hibernate or modern-standby
+suspension, and something in that family took the process out.
+
+**The more serious part is that the poller called it `complete`.** It had gap detection in the
+analyser, but nothing at the run level that could refuse to declare success — so a run that was 94%
+hole produced a manifest saying it had finished normally, and exited zero. That is the failure this
+project exists to prevent, appearing in the instrument rather than in a gate.
+
+Fixed: the poller now measures what fraction of the intended window it was actually polling, marks a
+run `degraded` below 90%, prints why, and exits non-zero. Sleep suppression is recorded as
+*requested* rather than *achieved*, because run 2 proved those are different things. Regression
+tests cover the run 2 shape, a healthy run, and ordinary scheduling jitter that must **not** read as
+a suspension.
+
+No numbers from this run appear anywhere in this file.
 
 ---
 

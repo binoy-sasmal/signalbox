@@ -26,6 +26,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 
+import poll  # noqa: E402
 from analyse import (  # noqa: E402
     E_NOISE_FLOOR_S,
     nyquist_check,
@@ -196,6 +197,46 @@ class TestEIsRelativeWithAFloor(unittest.TestCase):
 
     def test_floor_is_reported(self):
         self.assertEqual(E_NOISE_FLOOR_S, test_e(self._snapshots(3, 9))["noise_floor_s"])
+
+
+class TestRunCoverage(unittest.TestCase):
+    """Regression: a run that is mostly hole must not report success.
+
+    Run 2 slept for 56 of 60 minutes. Sleep suppression reported itself
+    asserted and did not hold, and the manifest still said "complete" at 6.3%
+    coverage. Finding that afterwards by inspection is not a control.
+    """
+
+    class _Probe:
+        def __init__(self, sleep_s, starts):
+            self.cfg = {"sleep_after_completion_s": sleep_s}
+            self.request_starts = starts
+
+    def test_healthy_run_passes(self):
+        starts = [i * 5.0 for i in range(700)]
+        result = poll.assess_coverage([self._Probe(5, starts)], 3500)
+        self.assertGreaterEqual(result["coverage"], poll.MIN_COVERAGE)
+
+    def test_long_sleep_is_detected(self):
+        """The run 2 shape: a short burst, a 56-minute hole, a short burst."""
+        starts = [i * 5.0 for i in range(7)] + [3371.0 + i * 5.0 for i in range(40)]
+        result = poll.assess_coverage([self._Probe(60, starts)], 3600)
+        self.assertLess(result["coverage"], poll.MIN_COVERAGE)
+        self.assertEqual(1, result["gap_count"])
+        self.assertGreater(result["largest_gap_s"], 3000)
+
+    def test_ordinary_jitter_is_not_a_gap(self):
+        """Scheduling jitter and slow fetches must not read as a suspension."""
+        starts, t = [], 0.0
+        for i in range(400):
+            t += 5.0 + (8.0 if i % 20 == 0 else 0.0)  # occasional slow fetch
+            starts.append(t)
+        result = poll.assess_coverage([self._Probe(5, starts)], t)
+        self.assertEqual(0, result["gap_count"])
+        self.assertGreaterEqual(result["coverage"], poll.MIN_COVERAGE)
+
+    def test_too_few_requests_is_zero_coverage(self):
+        self.assertEqual(0.0, poll.assess_coverage([self._Probe(5, [1.0])], 3600)["coverage"])
 
 
 if __name__ == "__main__":

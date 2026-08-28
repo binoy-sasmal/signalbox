@@ -467,6 +467,42 @@ def keep_awake(enable: bool) -> bool | None:
         return False
 
 
+# A run that is mostly hole must not be able to report success. Run 2 slept for
+# 56 of 60 minutes -- sleep suppression reported asserted and did not hold --
+# and the manifest still said "complete" with 6.3% coverage. Detecting that
+# afterwards by inspection is not a control; refusing to call it complete is.
+MIN_COVERAGE = 0.90
+
+
+def assess_coverage(probes: list["FeedProbe"], duration_s: float) -> dict:
+    """Fraction of the intended window we were actually polling.
+
+    A gap is any interval between consecutive requests, across all feeds
+    together, far longer than the slowest feed's own cycle. With the fastest
+    feed polling every couple of seconds, a combined gap of minutes is not
+    scheduling jitter -- it is the process not running.
+    """
+    starts = sorted(start for probe in probes for start in probe.request_starts)
+    if len(starts) < 2:
+        return {"coverage": 0.0, "gaps": [], "reason": "fewer than two requests"}
+
+    slowest = max((p.cfg["sleep_after_completion_s"] for p in probes), default=60)
+    threshold = max(60.0, slowest * 3)
+
+    gaps = [(a, b - a) for a, b in zip(starts, starts[1:]) if b - a > threshold]
+    lost = sum(gap for _, gap in gaps)
+    covered = max(0.0, (starts[-1] - starts[0]) - lost)
+    return {
+        "coverage": round(covered / duration_s, 4) if duration_s else 0.0,
+        "polling_seconds": round(covered, 1),
+        "lost_seconds": round(lost, 1),
+        "gap_threshold_s": threshold,
+        "gap_count": len(gaps),
+        "largest_gap_s": round(max((gap for _, gap in gaps), default=0.0), 1),
+        "minimum_required": MIN_COVERAGE,
+    }
+
+
 def _classify_error(exc: Exception) -> str:
     if isinstance(exc, httpx.ConnectTimeout):
         return "connect_timeout"
@@ -529,7 +565,8 @@ def validate(cfg: dict) -> None:
 
 
 def write_manifest(path: Path, cfg: dict, clock: ClockRef, probes: list[FeedProbe],
-                   status: str, observation_count: int) -> None:
+                   status: str, observation_count: int,
+                   coverage: dict | None = None, sleep_suppressed: bool | None = None) -> None:
     """Run manifest. Endpoints split and redacted -- never a joined URL."""
     manifest = {
         "run": cfg["run"],
@@ -543,10 +580,13 @@ def write_manifest(path: Path, cfg: dict, clock: ClockRef, probes: list[FeedProb
             "syncs": clock.syncs,
             "note": "Offsets are recorded, not applied. null means sync failed; never read as zero.",
         },
+        "coverage": coverage,
         "platform": {
             "python": sys.version,
             "platform": sys.platform,
-            "sleep_suppressed": keep_awake(True),
+            # Recorded as requested, NOT as achieved: run 2 reported True and the
+            # machine slept anyway. Coverage above is the measurement.
+            "sleep_suppression_requested": sleep_suppressed,
         },
         "feeds": [
             {
@@ -592,7 +632,7 @@ async def main(config_path: Path) -> int:
     writer = ObservationWriter(out_dir / "observations.jsonl")
     probes = [FeedProbe(feed, cfg, clock, writer, blobs_dir) for feed in cfg["feeds"]]
     manifest_path = out_dir / "run.json"
-    write_manifest(manifest_path, cfg, clock, probes, "running", 0)
+    write_manifest(manifest_path, cfg, clock, probes, "running", 0, sleep_suppressed=None)
 
     duration_s = cfg["duration_minutes"] * 60
     deadline = clock.t0_mono + duration_s
@@ -607,7 +647,8 @@ async def main(config_path: Path) -> int:
     print(f"[run] kill switch: create '{kill_switch}' to halt cleanly")
 
     awake = keep_awake(True)
-    print(f"[run] sleep suppression: {'asserted' if awake else awake}")
+    print(f"[run] sleep suppression requested: {'asserted' if awake else awake} "
+          "(not a guarantee -- coverage is checked at the end)")
 
     status = "complete"
     try:
@@ -621,11 +662,28 @@ async def main(config_path: Path) -> int:
     finally:
         keep_awake(False)
         clock.sync("end")
-        write_manifest(manifest_path, cfg, clock, probes, status, writer.count)
+        coverage = assess_coverage(probes, duration_s)
+        if status == "complete" and coverage["coverage"] < MIN_COVERAGE:
+            status = "degraded"
+        write_manifest(manifest_path, cfg, clock, probes, status, writer.count,
+                       coverage=coverage, sleep_suppressed=awake)
         writer.close()
 
     print(f"[run] {writer.count} observations -> {out_dir / 'observations.jsonl'}")
     print(f"[run] manifest -> {manifest_path}")
+
+    if status == "degraded":
+        print(
+            f"\n[run] DEGRADED -- polled for only {coverage['polling_seconds']:.0f}s of a "
+            f"{duration_s:.0f}s window ({coverage['coverage']:.1%}; "
+            f"{MIN_COVERAGE:.0%} required).\n"
+            f"[run] {coverage['gap_count']} gap(s), largest {coverage['largest_gap_s']:.0f}s. "
+            "The most likely cause is the machine sleeping.\n"
+            "[run] This run is NOT a valid characterisation and must not be recorded as one.",
+            file=sys.stderr,
+        )
+        return 1
+    print(f"[run] coverage {coverage['coverage']:.1%} of the intended window")
     return 0
 
 

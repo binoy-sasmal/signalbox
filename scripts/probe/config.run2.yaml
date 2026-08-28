@@ -117,18 +117,20 @@ feeds:
     documented_limit: null
     self_imposed_ceiling: {requests: 15, window_s: 60}
     async_repoll: true
-    licence: unverified
-    attribution: unverified
+    licence: "CC-BY-4.0"
+    attribution: "© HSL 2026"
     licence_sources:
       - "https://www.hsl.fi/en/hsl/open-data"
-      - "https://digitransit.fi/en/developers/apis/7-terms-of-use/"
     licence_checked: "2026-08-28"
     licence_status: >-
-      CC BY 4.0 indicated but NOT verified. Digitransit's terms state CC BY but
-      are scoped to registered api.digitransit.fi usage, which is the deprecated
-      path this endpoint replaces; hsl.fi returns HTTP 403 to automated fetch so
-      the primary source could not be read. Not a blocker for probing. IS a
-      blocker for onboarding as a tenant.
+      Verified from HSL's Terms of Use: "All data sets and APIs (with the
+      exception of the Journey Planner OSM data listed below) are licensed under
+      Creative Commons BY 4.0 International Licence". Attribution: "cite the
+      Licensee and the time when HSL delivered the data (e.g. © HSL 2016)" --
+      year granularity, so no per-row obligation. The ODbL exception covers
+      Journey Planner OSM geometry and address data used by the routing,
+      geocoding and map APIs, not GTFS-RT. NOTE: the attribution string carries
+      a year and is therefore not static; see the schema note in metrics.md.
     notes: >-
       Documented 15s cadence, 1.27 MB. 5s sampling puts Nyquist at 10s, below
       the documented cadence, so unlike gtfs.de this feed's cadence should
@@ -144,14 +146,13 @@ feeds:
     documented_limit: null
     self_imposed_ceiling: {requests: 35, window_s: 60}
     async_repoll: true
-    licence: unverified
-    attribution: unverified
+    licence: "CC-BY-4.0"
+    attribution: "© HSL 2026"
     licence_sources:
       - "https://www.hsl.fi/en/hsl/open-data"
-      - "https://digitransit.fi/en/developers/apis/7-terms-of-use/"
     licence_checked: "2026-08-28"
     licence_status: >-
-      Same as hsl_tripupdates: CC BY 4.0 indicated, not verified.
+      Same as hsl_tripupdates: CC BY 4.0, verified from HSL's Terms of Use.
     notes: >-
       The high-frequency shape. Documented 1s cadence at 122 KB, a workload
       unlike anything characterised so far (vbb 16s, ovapi <=60s, gtfs.de 30s),
