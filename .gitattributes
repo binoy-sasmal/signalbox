@@ -1,0 +1,5 @@
+# core.autocrlf is true in this repo, so a committed shell script would be
+# checked out with CRLF endings and fail under sh with a \r parse error. Scoped
+# to this hook directory rather than to *.sh: the same latent issue exists for
+# .githooks/pre-commit, but that is pre-existing and not this change's to fix.
+.claude/hooks/*.sh text eol=lf

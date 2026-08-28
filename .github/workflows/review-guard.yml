@@ -1,0 +1,27 @@
+# Adversarial suite for the gate-reviewer read-only guard.
+#
+# Separate from secrets-check.yml because it is a different concern, and kept in
+# CI rather than left as a local-only test for the reason this repo already
+# applies to Conftest and Gatekeeper: a check you have to remember to run is
+# feedback, and only the enforced gate is enforcement. The guard is what stops a
+# review agent mutating the repo it is reviewing, so a silent regression in it
+# is not something to discover by noticing.
+#
+# Stdlib only. Nothing installs in front of the gate.
+
+name: review-guard
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  readonly-guard-suite:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - name: Adversarial suite
+        run: python3 -m unittest discover -s .claude/hooks -p 'test_*.py' -v
