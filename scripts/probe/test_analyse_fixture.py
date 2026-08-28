@@ -183,5 +183,36 @@ class TestSyntheticOutputIsLabelled(FixtureTestCase):
         self.assertNotIn("SYNTHETIC", table)
 
 
+class TestPreconditionGuards(FixtureTestCase):
+    """A test whose discriminating assumption is violated must stand down.
+
+    `fast_cadence` regenerates every 2s, violating Test B's quantisation
+    precondition and Test C's gap precondition simultaneously. Live evidence:
+    hsl_vehiclepositions, where C's false `echo` outvoted two correct tests.
+    """
+
+    def test_b_stands_down_on_a_cadence_too_coarse_to_resolve(self):
+        detail = self.feeds["fast_cadence"]["header_timestamp"]["detail"]["B_lag_shape"]
+        self.assertEqual("unavailable", detail["verdict"])
+
+    def test_c_stands_down_when_the_gap_spans_generations(self):
+        detail = self.feeds["fast_cadence"]["header_timestamp"]["detail"]["C_async_repoll"]
+        self.assertEqual("unavailable", detail["verdict"])
+        self.assertIn("spans real generations", detail["reason"])
+
+    def test_guards_do_not_disarm_the_tests_on_a_normal_feed(self):
+        """The guards must cost nothing where the preconditions hold."""
+        votes = self.feeds["fake_generation"]["header_timestamp"]["votes"]
+        self.assertEqual("generation", votes["A_body_modulo_timestamp"])
+        self.assertEqual("generation", votes["B_lag_shape"])
+        self.assertEqual("generation", votes["C_async_repoll"])
+
+    def test_strength_is_recorded_with_every_verdict(self):
+        for feed in self.feeds.values():
+            strength = feed["header_timestamp"]["strength"]
+            self.assertIn(strength["label"], {"none", "weak", "moderate", "strong"})
+            self.assertEqual(5, strength["total_tests"])
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

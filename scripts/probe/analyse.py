@@ -32,11 +32,27 @@ from google.transit import gtfs_realtime_pb2
 # Clock offset is a constant bias and does not affect the ratio.
 B_RATIO_GENERATION = 0.15
 B_RATIO_ECHO = 0.05
+# B has preconditions of its own, and both were violated by a live feed before
+# they were checked. GTFS-RT header timestamps are integer seconds, so lag is
+# quantised to 1s: on a 2s-cadence feed the sawtooth occupies about two levels
+# and its shape is not characterisable at all. And the model puts lag in
+# [0, cadence] -- a median lag ABOVE the cadence means we are measuring a
+# producer's own pipeline delay, not the ageing of a snapshot, so the ratio
+# describes nothing. Derived from the test, not tuned to a feed.
+B_MIN_CADENCE_QUANTA = 5.0
+HEADER_TIMESTAMP_RESOLUTION_S = 1.0
 
 # --- Test C tolerance --------------------------------------------------------
 # Timestamps differing by roughly the re-poll gap, and tracking our request
 # times, is echo behaviour observed directly.
 C_GAP_TOLERANCE_S = 1.0
+# C compares two fetches of THE SAME snapshot, so the re-poll gap must be
+# comfortably shorter than the cadence. On hsl_vehiclepositions -- 1-2s cadence,
+# 2.4s gap -- the pair straddled real generations and C returned a false `echo`,
+# outvoting two tests that were right. Same class as Test A on static content:
+# when a test's discriminating assumption is violated it must stand down, not
+# vote.
+C_MAX_GAP_FRACTION_OF_CADENCE = 0.5
 
 # --- Test D ------------------------------------------------------------------
 D_MIN_ENTITY_TS_COVERAGE = 0.5
@@ -290,6 +306,32 @@ def test_b(snapshots: list[Snapshot], cadence_s: float | None, offset_ms: float 
     if len(lags) < 10:
         return {"verdict": "unavailable", "reason": f"only {len(lags)} usable samples"}
 
+    quanta = cadence_s / HEADER_TIMESTAMP_RESOLUTION_S
+    if quanta < B_MIN_CADENCE_QUANTA:
+        return {
+            "verdict": "unavailable",
+            "cadence_s": cadence_s,
+            "cadence_quanta": round(quanta, 2),
+            "reason": (
+                f"cadence {cadence_s}s spans only {quanta:.1f} one-second timestamp levels "
+                f"({B_MIN_CADENCE_QUANTA} required); a sawtooth quantised into that few levels "
+                "has no characterisable shape"
+            ),
+        }
+
+    median_lag = statistics.median(lags)
+    if median_lag > cadence_s:
+        return {
+            "verdict": "unavailable",
+            "lag_p50_s": round(median_lag, 3),
+            "cadence_s": cadence_s,
+            "reason": (
+                f"median lag {median_lag:.2f}s exceeds the {cadence_s}s cadence, so lag is not "
+                "confined to [0, cadence] as the sawtooth model requires -- this is the "
+                "producer's own pipeline delay, not a snapshot ageing"
+            ),
+        }
+
     stdev = statistics.pstdev(lags)
     ratio = stdev / cadence_s
     result = {
@@ -311,7 +353,8 @@ def test_b(snapshots: list[Snapshot], cadence_s: float | None, offset_ms: float 
     return result
 
 
-def test_c(observations: list[dict], decoded: dict[int, Snapshot], gap_s: float) -> dict:
+def test_c(observations: list[dict], decoded: dict[int, Snapshot], gap_s: float,
+           cadence_s: float | None = None) -> dict:
     """Asynchronous re-poll -- the deliberate perturbation.
 
     Unaffected by static content, so it stays authoritative on a degraded feed
@@ -338,6 +381,25 @@ def test_c(observations: list[dict], decoded: dict[int, Snapshot], gap_s: float)
 
     if not pairs:
         return {"verdict": "unavailable", "reason": "no usable re-poll pairs", "pairs": []}
+
+    # The test compares two fetches of the SAME snapshot. If the gap is not
+    # comfortably shorter than the cadence, the pair straddles real generations
+    # and their honest advance is indistinguishable from restamping.
+    if cadence_s and pairs:
+        observed_gap = max(p["request_gap_s"] for p in pairs)
+        if observed_gap > cadence_s * C_MAX_GAP_FRACTION_OF_CADENCE:
+            return {
+                "verdict": "unavailable",
+                "pairs": pairs,
+                "observed_gap_s": observed_gap,
+                "cadence_s": cadence_s,
+                "reason": (
+                    f"re-poll gap {observed_gap:.2f}s exceeds "
+                    f"{C_MAX_GAP_FRACTION_OF_CADENCE:g}x the {cadence_s}s cadence, so the pair "
+                    "spans real generations; any timestamp advance is expected and cannot be "
+                    "read as restamping"
+                ),
+            }
 
     if any(pair["tracks_request_time"] for pair in pairs):
         return {"verdict": "echo", "pairs": pairs,
@@ -494,23 +556,40 @@ def nyquist_check(deltas: list[float], cadence_p50: float | None,
     return result
 
 
-def combine(votes: dict[str, str]) -> tuple[str, str]:
-    """Unanimity among available tests, or unknown.
+#: How much weight the verdict carries, by how many tests could speak to it.
+STRENGTH_BY_COUNT = {0: "none", 1: "weak", 2: "moderate"}
+
+
+def combine(votes: dict[str, str]) -> tuple[str, str, dict]:
+    """Unanimity among available tests, or unknown -- with its evidence strength.
 
     Disagreement is not resolved with a narrative. The per-test votes are
     recorded so a human can look, and the tenant is marked unknown until one
     does.
+
+    A verdict also carries how many tests were able to speak to it. Five tests
+    agreeing and one test unopposed are both "unanimous", and reporting them
+    identically would overstate the second. Evidence strength travels with the
+    verdict, as the comparison gap travels with persistence.
     """
     available = {name: verdict for name, verdict in votes.items()
                  if verdict in ("generation", "echo")}
+    strength = {
+        "available_tests": len(available),
+        "total_tests": len(votes),
+        "label": STRENGTH_BY_COUNT.get(len(available), "strong"),
+    }
     if not available:
-        return "unknown", "no test was able to discriminate"
+        return "unknown", "no test was able to discriminate", strength
     distinct = set(available.values())
     if len(distinct) == 1:
         verdict = distinct.pop()
-        return verdict, f"unanimous across {len(available)} available test(s): {', '.join(sorted(available))}"
+        return (verdict,
+                f"unanimous across {len(available)} of {len(votes)} tests: "
+                f"{', '.join(sorted(available))}",
+                strength)
     disagreement = ", ".join(f"{name}={verdict}" for name, verdict in sorted(available.items()))
-    return "unknown", f"available tests disagree ({disagreement}); not resolved by narrative"
+    return "unknown", f"available tests disagree ({disagreement}); not resolved by narrative", strength
 
 
 # ---------------------------------------------------------------------------
@@ -759,11 +838,11 @@ def analyse_feed(feed_id: str, observations: list[dict], run_dir: Path,
     votes_detail = {
         "A_body_modulo_timestamp": test_a(scheduled, static),
         "B_lag_shape": test_b(scheduled, cadence["delta_p50_s"], offset_ms),
-        "C_async_repoll": test_c(observations, decoded, gap_s),
+        "C_async_repoll": test_c(observations, decoded, gap_s, cadence["delta_p50_s"]),
         "D_entity_timestamps": test_d(scheduled),
         "E_http_date_last_modified": test_e(scheduled),
     }
-    verdict, rationale = combine({k: v["verdict"] for k, v in votes_detail.items()})
+    verdict, rationale, strength = combine({k: v["verdict"] for k, v in votes_detail.items()})
 
     if verdict == "echo":
         # Cadence is derived from distinct header timestamps. On an echo feed
@@ -846,6 +925,7 @@ def analyse_feed(feed_id: str, observations: list[dict], run_dir: Path,
         "churn": churn_result,
         "header_timestamp": {
             "verdict": verdict,
+            "strength": strength,
             "rationale": rationale,
             "static_content_guard_triggered": static,
             "votes": {k: v["verdict"] for k, v in votes_detail.items()},
@@ -911,7 +991,10 @@ def markdown_table(results: list[dict], synthetic: bool = False) -> str:
             f"{f'{ratio:.2f}' if ratio is not None else '—'} | "
             f"{churn_data.get('id_stability', '—')} | "
             f"{f'{gap:.0f} s' if gap is not None else '—'} | "
-            f"**{r['header_timestamp']['verdict']}** | "
+            f"**{r['header_timestamp']['verdict']}**"
+            + (f" ({st['label']} {st['available_tests']}/{st['total_tests']})"
+               if (st := r['header_timestamp'].get('strength')) and st['label'] != 'strong'
+               else "") + " | "
             f"{r['parse']['failure_rate']:.1%} |"
         )
     rows.append("")

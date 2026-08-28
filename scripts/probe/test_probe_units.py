@@ -29,7 +29,10 @@ sys.path.insert(0, str(Path(__file__).parent))
 import poll  # noqa: E402
 from analyse import (  # noqa: E402
     E_NOISE_FLOOR_S,
+    combine,
     nyquist_check,
+    test_b,
+    test_c,
     test_e,
 )
 
@@ -37,8 +40,10 @@ from analyse import (  # noqa: E402
 class FakeSnapshot:
     """Minimal stand-in: test_e reads only these three attributes."""
 
-    def __init__(self, header_ts: int, date: str | None, last_modified: str | None) -> None:
+    def __init__(self, header_ts: int, date: str | None, last_modified: str | None,
+                 request_at: datetime | None = None) -> None:
         self.header_ts = header_ts
+        self.request_at = request_at
         headers = {}
         if date:
             headers["date"] = date
@@ -237,6 +242,122 @@ class TestRunCoverage(unittest.TestCase):
 
     def test_too_few_requests_is_zero_coverage(self):
         self.assertEqual(0.0, poll.assess_coverage([self._Probe(5, [1.0])], 3600)["coverage"])
+
+
+class TestBHasPreconditionsOfItsOwn(unittest.TestCase):
+    """Regression: B's sawtooth model must fit before its ratio means anything.
+
+    Both guards come from the model, not from a feed. GTFS-RT header timestamps
+    are integer seconds, so on hsl_vehiclepositions -- 2s cadence -- the
+    sawtooth occupied about two quantisation levels, its spread was half what
+    the model predicts, and it cleared the generation threshold by 0.0009.
+    """
+
+    def _snapshots(self, cadence, n=60, lag_offset=0.0):
+        """A clean sawtooth: lag rises through [0, cadence] and resets."""
+        out = []
+        for i in range(n):
+            gen = BASE + (i * cadence) // cadence * cadence
+            header = BASE + (i // 1) * 0  # placeholder, set below
+            gen_epoch = BASE + (i * 1) // cadence * cadence
+            request = datetime.fromtimestamp(
+                BASE + i * 1 + lag_offset, timezone.utc)
+            out.append(FakeSnapshot(gen_epoch, None, None, request))
+        return out
+
+    def test_cadence_too_coarse_for_one_second_quanta(self):
+        """2s cadence spans two 1s levels -- no characterisable shape."""
+        snaps = self._snapshots(cadence=2)
+        result = test_b(snaps, 2.0, 0.0)
+        self.assertEqual("unavailable", result["verdict"])
+        self.assertIn("one-second timestamp levels", result["reason"])
+
+    def test_adequate_cadence_is_evaluated(self):
+        snaps = self._snapshots(cadence=30)
+        result = test_b(snaps, 30.0, 0.0)
+        self.assertNotIn("one-second timestamp levels", result.get("reason", ""))
+
+    def test_median_lag_above_cadence_breaks_the_model(self):
+        """Lag outside [0, cadence] is producer pipeline delay, not ageing."""
+        snaps = self._snapshots(cadence=30, lag_offset=60.0)
+        result = test_b(snaps, 30.0, 0.0)
+        self.assertEqual("unavailable", result["verdict"])
+        self.assertIn("exceeds", result["reason"])
+
+
+class TestCRequiresAGapShorterThanTheCadence(unittest.TestCase):
+    """Regression: C compares two fetches of the SAME snapshot.
+
+    On hsl_vehiclepositions a 2.41s re-poll gap against a 2.0s cadence spanned
+    real generations, and C returned a false `echo` that outvoted two tests
+    which were right.
+    """
+
+    def _observations(self):
+        return [
+            {"seq": 1, "probe_action": "async_repoll_a"},
+            {"seq": 2, "probe_action": "async_repoll_b"},
+        ]
+
+    def _decoded(self, ts_a, ts_b, gap):
+        t0 = datetime.fromtimestamp(BASE, timezone.utc)
+        return {
+            1: FakeSnapshot(ts_a, None, None, t0),
+            2: FakeSnapshot(ts_b, None, None, t0 + timedelta(seconds=gap)),
+        }
+
+    def test_gap_exceeding_half_the_cadence_stands_down(self):
+        result = test_c(self._observations(),
+                        self._decoded(BASE, BASE + 2, 2.41), 2.0, cadence_s=2.0)
+        self.assertEqual("unavailable", result["verdict"])
+        self.assertIn("spans real generations", result["reason"])
+
+    def test_gap_well_inside_the_cadence_still_detects_echo(self):
+        """The guard must not disarm C where it is valid."""
+        result = test_c(self._observations(),
+                        self._decoded(BASE, BASE + 2, 2.0), 2.0, cadence_s=60.0)
+        self.assertEqual("echo", result["verdict"])
+
+    def test_gap_well_inside_the_cadence_still_detects_generation(self):
+        result = test_c(self._observations(),
+                        self._decoded(BASE, BASE, 2.0), 2.0, cadence_s=60.0)
+        self.assertEqual("generation", result["verdict"])
+
+    def test_no_cadence_known_leaves_c_enabled(self):
+        result = test_c(self._observations(),
+                        self._decoded(BASE, BASE, 2.0), 2.0, cadence_s=None)
+        self.assertEqual("generation", result["verdict"])
+
+
+class TestVerdictCarriesItsEvidenceStrength(unittest.TestCase):
+    """Five tests agreeing and one test unopposed are both 'unanimous'."""
+
+    def test_single_test_is_weak(self):
+        verdict, _, strength = combine({
+            "A": "generation", "B": "unavailable", "C": "unavailable",
+            "D": "unavailable", "E": "unavailable"})
+        self.assertEqual("generation", verdict)
+        self.assertEqual("weak", strength["label"])
+        self.assertEqual(1, strength["available_tests"])
+
+    def test_four_tests_is_strong(self):
+        _, _, strength = combine({
+            "A": "generation", "B": "generation", "C": "generation",
+            "D": "unavailable", "E": "generation"})
+        self.assertEqual("strong", strength["label"])
+
+    def test_two_tests_is_moderate(self):
+        _, _, strength = combine({
+            "A": "generation", "B": "unavailable", "C": "unavailable",
+            "D": "unavailable", "E": "generation"})
+        self.assertEqual("moderate", strength["label"])
+
+    def test_disagreement_still_reports_strength(self):
+        verdict, _, strength = combine({
+            "A": "generation", "B": "echo", "C": "unavailable",
+            "D": "unavailable", "E": "unavailable"})
+        self.assertEqual("unknown", verdict)
+        self.assertEqual(2, strength["available_tests"])
 
 
 if __name__ == "__main__":

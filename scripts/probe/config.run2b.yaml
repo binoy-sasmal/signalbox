@@ -1,0 +1,68 @@
+# Stage 0 -- run 2b: resolve ovapi_tripupdates' cadence by HEAD.
+#
+# Run 2 sampled ovapi at 60s, which answered its open question (validators are
+# not honoured: 0 of 77 responses were 304 across two runs) but left the cadence
+# below Nyquist and therefore unresolved.
+#
+# That left Gate 0 turning on an interpretation: PLAN section 6.6 accepts
+# "established why a cadence is not derivable", while section 6.7 asks for
+# "measured cadence". Two documents disagreeing means the criteria were not
+# airtight, and choosing the reading that passes is the move the discipline
+# exists to prevent. This run removes the question instead of arguing it.
+#
+# Cost: HEAD carries Last-Modified at zero body cost, so ~150 requests move
+# essentially nothing. 10s sampling puts Nyquist at 20s, well inside any
+# plausible cadence for this feed.
+
+run: run2b
+duration_minutes: 25
+
+user_agent: "signalbox-probe/0.1 (Stage 0 feed feasibility spike; contact: binoysasmal@yahoo.com)"
+accept_encoding: "gzip, deflate"
+
+kill_switch_file: "STOP"
+output_root: "runs"
+
+timeouts:
+  connect_s: 5
+  total_s: 30
+
+# No re-poll: this run exists to measure cadence, and Test C needs bodies.
+# ovapi's header-timestamp verdict is already settled -- generation, unanimous
+# across 4 of 5 tests in run 2 -- so there is nothing for C to add here.
+async_repoll:
+  gap_seconds: 2
+  at_minutes: []
+
+backoff:
+  cap_seconds: 900
+  consecutive_429_to_stop: 3
+
+static_content_guard:
+  min_median_entities: 10
+  min_median_semantic_churn: 0.05
+
+feeds:
+  - id: ovapi_tripupdates
+    base_url: "https://gtfs.ovapi.nl/nl/tripUpdates.pb"
+    query: {}
+    auth: none
+    method: HEAD
+    sleep_after_completion_s: 10
+    documented_limit: null
+    self_imposed_ceiling: {requests: 10, window_s: 60}
+    async_repoll: false
+    licence: unresolved
+    attribution: unresolved
+    licence_sources:
+      - "http://gtfs.ovapi.nl/README"
+    licence_checked: "2026-08-28"
+    licence_status: >-
+      Use explicitly permitted by the README; no SPDX identifier and no required
+      attribution string for general use. No enquiry sent and none planned; the
+      unresolved state is deliberate. See docs/metrics.md.
+    notes: >-
+      HEAD only. No full GETs are scheduled: run 2 already collected 61 bodies
+      and settled the header-timestamp verdict and entity analysis, so this run
+      needs only Last-Modified. That keeps a volunteer-run service's cost at
+      essentially zero for the 25 minutes.

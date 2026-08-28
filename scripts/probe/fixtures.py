@@ -73,7 +73,7 @@ def build(gen_epoch: int, n_entities: int, changing: int,
 
 def emit(feed: str, mode: str, n_entities: int, changing: int, regenerate_ids: bool,
          records: list, blobs: Path, seq_start: int, turnover: int = 0,
-         cadence: int = CADENCE) -> int:
+         cadence: int = CADENCE, poll: int = POLL) -> int:
     seq = seq_start
     elapsed = 0.0
     repolls = list(REPOLL_AT)
@@ -121,23 +121,33 @@ def emit(feed: str, mode: str, n_entities: int, changing: int, regenerate_ids: b
                 "body_bytes_wire": len(raw), "body_bytes_decompressed": len(raw),
                 "error": None,
             })
-        elapsed += POLL
+        elapsed += poll
     return seq
 
 
-#: feed id -> (mode, entities, changing, regenerate_ids, turnover, cadence_s)
+#: feed id -> (mode, entities, changing, regenerate_ids, turnover, cadence_s, poll_s)
+#
+# fast_cadence regenerates every 2s, which violates the preconditions of two
+# tests at once and must make both stand down rather than vote:
+#   Test B -- an integer-second timestamp gives a 2s sawtooth about two
+#             quantisation levels, which has no characterisable shape.
+#   Test C -- the 2s re-poll gap is not shorter than the cadence, so the pair
+#             spans real generations and their honest advance is
+#             indistinguishable from restamping. This produced a false `echo`
+#             on hsl_vehiclepositions that outvoted two correct tests.
 #
 # undersampled_fast regenerates as fast as we poll, so its cadence cannot be
 # resolved -- the deltas that come back are our sampling grid. It must be
 # flagged regardless of the header-timestamp verdict, which is `generation`.
 FEEDS = {
-    "fake_generation":   ("generation", 50, 15, True, 0, 20),
-    "fake_echo":         ("echo", 50, 15, False, 0, 20),
-    "fake_static":       ("generation", 3, 0, False, 0, 20),
-    "turnover15_stable": ("generation", 50, 15, False, 7, 20),
-    "turnover40_stable": ("generation", 50, 15, False, 20, 20),
-    "turnover15_regen":  ("generation", 50, 15, True, 7, 20),
-    "undersampled_fast": ("generation", 50, 15, False, 0, 5),
+    "fake_generation":   ("generation", 50, 15, True, 0, 20, 5),
+    "fake_echo":         ("echo", 50, 15, False, 0, 20, 5),
+    "fake_static":       ("generation", 3, 0, False, 0, 20, 5),
+    "turnover15_stable": ("generation", 50, 15, False, 7, 20, 5),
+    "turnover40_stable": ("generation", 50, 15, False, 20, 20, 5),
+    "turnover15_regen":  ("generation", 50, 15, True, 7, 20, 5),
+    "undersampled_fast": ("generation", 50, 15, False, 0, 5, 5),
+    "fast_cadence":      ("generation", 50, 15, False, 0, 2, 1),
 }
 
 
@@ -149,9 +159,9 @@ def build_synthetic_run(root: Path) -> Path:
 
     records: list[dict] = []
     seq = 0
-    for feed, (mode, entities, changing, regenerate, turnover, cadence) in FEEDS.items():
+    for feed, (mode, entities, changing, regenerate, turnover, cadence, poll) in FEEDS.items():
         seq = emit(feed, mode, entities, changing, regenerate, records, blobs, seq,
-                   turnover, cadence)
+                   turnover, cadence, poll)
 
     (run_dir / "observations.jsonl").write_text(
         "\n".join(json.dumps(record) for record in records) + "\n", encoding="utf-8")
@@ -161,7 +171,8 @@ def build_synthetic_run(root: Path) -> Path:
         "warning": SYNTHETIC_WARNING,
         "status": "complete",
         "clock": {"ntp_server": None, "syncs": [], "note": SYNTHETIC_WARNING},
-        "feeds": [{"id": feed, "sleep_after_completion_s": POLL, "effective_interval_s": POLL} for feed in FEEDS],
+        "feeds": [{"id": feed, "sleep_after_completion_s": cfg[6], "effective_interval_s": cfg[6]}
+                  for feed, cfg in FEEDS.items()],
     }, indent=2), encoding="utf-8")
     return run_dir
 
