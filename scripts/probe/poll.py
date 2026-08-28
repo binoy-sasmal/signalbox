@@ -388,6 +388,31 @@ class FeedProbe:
               f"statuses {dict(self.status_counts)}")
 
 
+ES_CONTINUOUS = 0x80000000
+ES_SYSTEM_REQUIRED = 0x00000001
+
+
+def keep_awake(enable: bool) -> bool | None:
+    """Ask Windows not to sleep while a run is in flight.
+
+    The request lives only as long as this process and changes no system
+    setting, so it needs no cleanup beyond releasing it. Without this a machine
+    whose standby timeout is shorter than the run silently truncates it, and an
+    hour of polite polling against volunteer-run feeds is wasted.
+
+    Returns True if asserted, False if the call failed, None if not applicable.
+    """
+    if sys.platform != "win32":
+        return None
+    try:
+        import ctypes
+
+        state = ES_CONTINUOUS | ES_SYSTEM_REQUIRED if enable else ES_CONTINUOUS
+        return bool(ctypes.windll.kernel32.SetThreadExecutionState(state))
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def _classify_error(exc: Exception) -> str:
     if isinstance(exc, httpx.ConnectTimeout):
         return "connect_timeout"
@@ -467,6 +492,7 @@ def write_manifest(path: Path, cfg: dict, clock: ClockRef, probes: list[FeedProb
         "platform": {
             "python": sys.version,
             "platform": sys.platform,
+            "sleep_suppressed": keep_awake(True),
         },
         "feeds": [
             {
@@ -520,6 +546,9 @@ async def main(config_path: Path) -> int:
     print(f"[run] {cfg['run']}: {len(probes)} feeds for {cfg['duration_minutes']} min")
     print(f"[run] kill switch: create '{kill_switch}' to halt cleanly")
 
+    awake = keep_awake(True)
+    print(f"[run] sleep suppression: {'asserted' if awake else awake}")
+
     status = "complete"
     try:
         async with httpx.AsyncClient(headers=headers, timeout=timeout, follow_redirects=True) as client:
@@ -530,6 +559,7 @@ async def main(config_path: Path) -> int:
         status = "interrupted"
         print("\n[run] interrupted; captured data is intact")
     finally:
+        keep_awake(False)
         clock.sync("end")
         write_manifest(manifest_path, cfg, clock, probes, status, writer.count)
         writer.close()

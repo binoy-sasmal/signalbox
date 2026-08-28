@@ -15,9 +15,11 @@ duration_minutes: 60
 
 # Identify ourselves. gtfs.de is a free community service and 720 requests an
 # hour should be attributable to a human who can be emailed.
-# REQUIRED: replace <contact> before running. The poller refuses to start
-# while the placeholder is still here.
-user_agent: "signalbox-probe/0.1 (Stage 0 feed feasibility spike; contact: <contact>)"
+# The poller refuses to start while the <contact> placeholder is present.
+# Temporary address for run 1. Replace with a durable one before run 2, and do
+# not use it for the OVapi licence correspondence -- a reply needs somewhere
+# that will still exist.
+user_agent: "signalbox-probe/0.1 (Stage 0 feed feasibility spike; contact: selil23188@archifun.com)"
 accept_encoding: "gzip, deflate"
 
 kill_switch_file: "STOP"
