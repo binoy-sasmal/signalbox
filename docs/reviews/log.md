@@ -48,6 +48,7 @@ diff, so anything persuasive in it arrives as framing rather than as evidence.
 |---|---|---|---|---|
 | 2026-08-29 | *(self)* `b1626f2..HEAD` — the review agent's own construction | **VOID** (was: no verdict returned) | 8 raised, 7 confirmed | Findings under items 1, 3, 9, 10. One claim (`context: fork` inherits conversation history) checked against the live docs and found wrong. The agent did not emit a VERDICT line, a tally, or the rubric table -- a defect in the agent, recorded here rather than smoothed over. |
 | 2026-08-29 | *(self)* `0419f6b..HEAD` — the seven fixes from review 1 | **VOID** (was: ESCALATE) | 10 raised | Halt under sections 2a and 4.1. F1/F2 are observations of the run itself: the frontmatter hooks and tools allow-list did not apply, and the CLAUDE.md it received was the pre-`c9b7e64` version. Cause is a claim about the harness, correctly marked UNVERIFIED BY ME. F3-F10 stand on repo artefacts and are unfixed. Gap noted by the reviewer: commit `0419f6b` has never been reviewed. |
+| 2026-08-29 | *(self)* configuration probe — **no work reviewed** | **ESCALATE** | n/a — no diff adjudicated | Halt under 4.1. Scope was five verbatim questions about the running agent's own configuration. Established that the prompt, `CLAUDE.md` and `tools:` scoping were all current while the PreToolUse guard did not fire. Produced the removal in `0381df6` and ADR 0006. |
 
 ### Why reviews 1 and 2 are VOID
 
@@ -72,3 +73,32 @@ keeping this file git-tracked at all.
 The verdict column records what the review returned; the VOID marking records
 whether it was from a configuration that existed. Those are different facts and
 the row keeps both.
+
+### The 2026-08-29 configuration probe
+
+Run from a freshly restarted interactive session with workspace trust accepted —
+the state the staleness rule in `CLAUDE.md` requires, and the last remaining
+explanation for the guard's earlier silence. It asked the agent five verbatim
+questions about its own configuration and instructed it not to review anything.
+
+What it established, in the order it matters:
+
+1. The reviewer ran `git -C "d:/Projects/signalbox" diff` and `cd ... && git status
+   --short && echo`. The committed guard denied both by construction. No denial
+   appeared. **The frontmatter PreToolUse hook does not apply.**
+2. Its system prompt carried section 2a and its `CLAUDE.md` was post-`c9b7e64`.
+   **Both current.** So `tools:` scoping and the prompt are applied and the
+   `hooks:` key is not — which halves voided review 2's F1 rather than confirming
+   it, and means **prompt freshness is not evidence of hook wiring**.
+
+The guard is removed; see [ADR 0006](../decisions/0006-reviewer-read-only-enforcement.md)
+and the standing claim in [`../limits.md`](../limits.md).
+
+**This row counts as an escalation and reviews no work.** The tally it feeds
+therefore overstates coverage, and the gap the reviewer named itself is unchanged
+and now larger: `0419f6b` has never been validly reviewed, and nothing from
+`0419f6b` to HEAD has a non-void review behind it — the guard removal included.
+
+That last part cannot be fixed from here. The removal changes `.claude/agents/`, so
+a review of it in the session that made it would be reviewing a configuration that
+no longer exists, and would be VOID on arrival. It needs a restart first.
