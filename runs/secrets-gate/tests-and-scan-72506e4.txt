@@ -1,0 +1,58 @@
+### environment ###
+captured_at: 2026-08-29T21:54:02Z
+commit: 72506e4  (a detached worktree at that commit, not the working tree)
+Python 3.11.5
+
+### what this is ###
+Review 7 F3. Commit 72506e4's message states '56 tests green, 61 scanned
+0 skipped'. This is the output behind those two numbers, re-run at that
+commit.
+
+### the credential-gate suite ###
+$ python -m unittest discover -s scripts/probe -p 'test_check_no_secrets.py'
+----------------------------------------------------------------------
+Ran 56 tests in 0.218s
+
+OK
+[exit 0]
+
+### the gate itself, over every tracked file ###
+$ python scripts/probe/check_no_secrets.py
+Structural credential check passed (61 file(s) scanned, 0 skipped).
+[exit 0]
+
+### one thing this capture corrects ###
+'56 tests green' is true of the credential-gate suite and not of the whole
+probe test tree. The broader discovery pattern the suite's own docstring
+gives reports differently on this machine:
+
+$ python -m unittest discover -s scripts/probe -p 'test_*.py'
+ERROR: test_analyse_fixture (unittest.loader._FailedTest.test_analyse_fixture)
+ERROR: test_probe_units (unittest.loader._FailedTest.test_probe_units)
+Ran 58 tests in 0.202s
+FAILED (errors=2)
+[exit 1]
+
+Ran 58 rather than 56 because unittest's loader counts an unimportable
+module as one synthetic failing test. Both are import errors from missing
+third-party packages in this interpreter, not failures of the code:
+  test_analyse_fixture: ModuleNotFoundError: No module named 'google.transit'
+  test_probe_units: ModuleNotFoundError: No module named 'httpx'
+
+The credential gate is stdlib-only by design, which is why its suite runs
+here and in CI with no dependency install. The other two modules cover the
+Stage 0 probe and need httpx and the GTFS-realtime bindings.
+
+**CI is not affected and this is not a finding against it.**
+`.github/workflows/secrets-check.yml` already runs the gate job on the
+narrow `test_check*.py` pattern with nothing installed, and runs the broad
+`test_*.py` pattern in a separate job that installs requirements.txt first.
+The 58-with-2-errors line above is what a bare local interpreter reports,
+not what any enforced check reports.
+
+What it corrects is only how the commit message reads: 56 is the right
+number for the suite that commit changed, and it is not the number someone
+gets by running the pattern in that suite's own docstring. Recorded because
+the whole point of F3 is that a number in the record should arrive with the
+output that produced it, including when the output says something slightly
+more complicated than the number did.

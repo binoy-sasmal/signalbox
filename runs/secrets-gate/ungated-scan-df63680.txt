@@ -1,0 +1,67 @@
+### environment ###
+captured_at: 2026-08-29T21:57:18Z
+commit: df63680  (a detached worktree at that commit, not the working tree)
+Python 3.11.5
+
+### what this is ###
+Review 7 F3 asked for the output behind the 10. Capturing it raised the
+obvious next question -- what does the 7 it corrected reproduce as? -- and
+the answer is not 7. This is that measurement, at the commit whose message
+reported the 7, by the same method as the 874e808 capture.
+
+### how the exemption was disabled ###
+diff --git a/scripts/probe/check_no_secrets.py b/scripts/probe/check_no_secrets.py
+index 1375b4a..b658acf 100644
+--- a/scripts/probe/check_no_secrets.py
++++ b/scripts/probe/check_no_secrets.py
+@@ -388,7 +388,7 @@ def check_text_file(path: Path, auth_key_rule: bool = True) -> list[Finding]:
+             benign = (
+                 is_placeholder(value)
+                 or is_not_a_credential(value)
+-                or is_an_expression(value)
++                or False  # is_an_expression(value) -- DISABLED for this measurement
+                 or value.startswith(("$", "#"))
+                 or name.lower().endswith(POINTER_SUFFIXES)
+             )
+
+### the scan ###
+$ python scripts/probe/check_no_secrets.py
+Structural credential check FAILED (9 finding(s)):
+
+  scripts\probe\allowlist.py:44: auth-shaped key 'AUTH_PARAM_PATTERNS' holds a literal value. Use a SOPS-encrypted secret and an *_ref pointer, or '<redacted:auth_ref>'.
+  scripts\probe\allowlist.py:81: auth-shaped key 'key' holds a literal value. Use a SOPS-encrypted secret and an *_ref pointer, or '<redacted:auth_ref>'.
+  scripts\probe\analyse.py:770: auth-shaped key 'median_churn_keyed_on_semantic_key' holds a literal value. Use a SOPS-encrypted secret and an *_ref pointer, or '<redacted:auth_ref>'.
+  scripts\probe\analyse.py:772: auth-shaped key 'median_key_persistence_semantic' holds a literal value. Use a SOPS-encrypted secret and an *_ref pointer, or '<redacted:auth_ref>'.
+  scripts\probe\check_no_secrets.py:149: auth-shaped key 'AUTH_PARAM_PATTERNS' holds a literal value. Use a SOPS-encrypted secret and an *_ref pointer, or '<redacted:auth_ref>'.
+  scripts\probe\check_no_secrets.py:150: auth-shaped key 'auth' holds a literal value. Use a SOPS-encrypted secret and an *_ref pointer, or '<redacted:auth_ref>'.
+  scripts\probe\check_no_secrets.py:151: auth-shaped key 'AUTH_HEADER' holds a literal value. Use a SOPS-encrypted secret and an *_ref pointer, or '<redacted:auth_ref>'.
+  scripts\probe\poll.py:596: auth-shaped key 'auth' holds a literal value. Use a SOPS-encrypted secret and an *_ref pointer, or '<redacted:auth_ref>'.
+  scripts\probe\test_check_no_secrets.py:41: auth-shaped key 'AUTH_HEADER' holds a literal value. Use a SOPS-encrypted secret and an *_ref pointer, or '<redacted:auth_ref>'.
+
+This check is structural, not heuristic: each finding is a real violation of the capture allow-list or the endpoint-splitting rule, not a guess.
+[exit 1]
+
+### what this says about the recorded numbers ###
+df63680's commit message reported 7. This measurement reports 9, by the
+same one-line disabling used for the 874e808 capture. The procedure behind
+the 7 is not recorded anywhere in the repo and cannot be recovered, so what
+can honestly be said is: 7 does not reproduce, and 9 is what the natural
+reading of the claim produces at that commit.
+
+The move from 9 here to 10 at 874e808 is three lines, not the 'three
+additions' ADR 0004 section 13 described:
+
+  + infra/terraform/platform/compute.tf:50   ssh_authorized_keys = file(...)
+  + scripts/probe/check_no_secrets.py:220    GATE_KEY_NAME_EXEMPTIONS = frozenset(...)
+  - scripts/probe/allowlist.py:81            key = ...
+
+Two added and one removed. The removal is the gate-local narrowing of the
+unqualified name 'key', which is entry six in that section's own sequence
+of bypasses -- so the finding count fell because a different exemption
+widened. The ADR also attributed one of the additions to
+is_an_expression's own docstring; the three docstring lines
+(check_no_secrets.py:149-151) are present in this capture too, so they were
+not additions. That decomposition is corrected in the ADR.
+
+None of this changes the number that matters: 10 is what the exemption
+covers today, and it is captured in ungated-scan-874e808.txt.

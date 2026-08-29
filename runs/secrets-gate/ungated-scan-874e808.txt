@@ -1,0 +1,57 @@
+### environment ###
+captured_at: 2026-08-29T21:53:16Z
+commit: 874e808  (a detached worktree at that commit, not the working tree)
+Python 3.11.5
+
+### what this is ###
+Review 7 F3. ADR 0004 section 13 records that disabling the expression
+exemption raises 10 findings against this repo, correcting a 7 recorded
+earlier. The 10 was measured and then written down; this is the output it
+was measured from, captured by re-running the measurement at the same
+commit the ADR names.
+
+### how the exemption was disabled ###
+One line of check_no_secrets.py, in the benign-value disjunction:
+diff --git a/scripts/probe/check_no_secrets.py b/scripts/probe/check_no_secrets.py
+index 3abdbc5..32d24bb 100644
+--- a/scripts/probe/check_no_secrets.py
++++ b/scripts/probe/check_no_secrets.py
+@@ -421,7 +421,7 @@ def check_text_file(path: Path, auth_key_rule: bool = True) -> list[Finding]:
+             benign = (
+                 is_placeholder(value)
+                 or is_not_a_credential(value)
+-                or is_an_expression(value)
++                or False  # is_an_expression(value) -- DISABLED for this measurement
+                 or value.startswith(("$", "#"))
+                 or name.lower().endswith(POINTER_SUFFIXES)
+             )
+
+### the scan ###
+$ python scripts/probe/check_no_secrets.py
+Structural credential check FAILED (10 finding(s)):
+
+  infra\terraform\platform\compute.tf:50: auth-shaped key 'ssh_authorized_keys' holds a literal value. Use a SOPS-encrypted secret and an *_ref pointer, or '<redacted:auth_ref>'.
+  scripts\probe\allowlist.py:44: auth-shaped key 'AUTH_PARAM_PATTERNS' holds a literal value. Use a SOPS-encrypted secret and an *_ref pointer, or '<redacted:auth_ref>'.
+  scripts\probe\analyse.py:770: auth-shaped key 'median_churn_keyed_on_semantic_key' holds a literal value. Use a SOPS-encrypted secret and an *_ref pointer, or '<redacted:auth_ref>'.
+  scripts\probe\analyse.py:772: auth-shaped key 'median_key_persistence_semantic' holds a literal value. Use a SOPS-encrypted secret and an *_ref pointer, or '<redacted:auth_ref>'.
+  scripts\probe\check_no_secrets.py:149: auth-shaped key 'AUTH_PARAM_PATTERNS' holds a literal value. Use a SOPS-encrypted secret and an *_ref pointer, or '<redacted:auth_ref>'.
+  scripts\probe\check_no_secrets.py:150: auth-shaped key 'auth' holds a literal value. Use a SOPS-encrypted secret and an *_ref pointer, or '<redacted:auth_ref>'.
+  scripts\probe\check_no_secrets.py:151: auth-shaped key 'AUTH_HEADER' holds a literal value. Use a SOPS-encrypted secret and an *_ref pointer, or '<redacted:auth_ref>'.
+  scripts\probe\check_no_secrets.py:220: auth-shaped key 'GATE_KEY_NAME_EXEMPTIONS' holds a literal value. Use a SOPS-encrypted secret and an *_ref pointer, or '<redacted:auth_ref>'.
+  scripts\probe\poll.py:596: auth-shaped key 'auth' holds a literal value. Use a SOPS-encrypted secret and an *_ref pointer, or '<redacted:auth_ref>'.
+  scripts\probe\test_check_no_secrets.py:41: auth-shaped key 'AUTH_HEADER' holds a literal value. Use a SOPS-encrypted secret and an *_ref pointer, or '<redacted:auth_ref>'.
+
+This check is structural, not heuristic: each finding is a real violation of the capture allow-list or the endpoint-splitting rule, not a guess.
+[exit 1]
+
+### reading it ###
+Ten findings, every one an expression rather than a credential, by shape:
+one Terraform function call (compute.tf), one multi-line tuple opener
+(allowlist.py), one frozenset literal and three docstring example lines
+inside the gate's own source (check_no_secrets.py), three dict entries bound
+to calls (analyse.py x2, poll.py), and one string concatenation
+(test_check_no_secrets.py). That is what the exemption exists for.
+
+The number matters because it is the size of the surface the exemption
+covers -- and ADR 0004 section 13's point is that a surface that size will
+keep being bypassed through its own parsing.

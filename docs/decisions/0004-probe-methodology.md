@@ -314,12 +314,31 @@ Two accepted gaps now ship as fixtures marked *intentional exemption* rather tha
 `docs/limits.md` alone. An accepted gap with a test is a decision; one recorded only in
 prose is something the next person closes or widens without knowing it was deliberate.
 
-*A correction to the record.* The commit that added this exemption reported that ungating
-raised **7** findings against the repo. Re-measured 2026-08-29 at `874e808`, disabling the
-exemption raises **10** — the three additions are `compute.tf`'s `ssh_authorized_keys` and
-two lines committed afterwards, one of them `is_an_expression`'s own docstring. Seven was
-correct when written and is not the number to quote now. The count of *bypasses* above is a
-different sequence and is unaffected.
+*A correction to the record, and then a correction to the correction.* The commit that
+added this exemption, `df63680`, reported that ungating raised **7** findings against the
+repo. Re-measured 2026-08-29 at `874e808`, disabling the exemption raises **10**. That much
+was already recorded here. Review 7's F3 then asked for the output behind the 10, on the
+principle that a number written to correct another number should arrive with its evidence,
+and capturing it changed two of the surrounding claims:
+
+- **10 is confirmed**, at `874e808`, by disabling the exemption's disjunct and running the
+  gate over every tracked file:
+  [`runs/secrets-gate/ungated-scan-874e808.txt`](../../runs/secrets-gate/ungated-scan-874e808.txt).
+- **7 does not reproduce.** The same method at `df63680` raises **9**:
+  [`runs/secrets-gate/ungated-scan-df63680.txt`](../../runs/secrets-gate/ungated-scan-df63680.txt).
+  The procedure behind the 7 was never written down and cannot be recovered, so the honest
+  statement is that it does not reproduce — not that it was wrong.
+- **The decomposition given here was wrong.** It said the three additions were `compute.tf`'s
+  `ssh_authorized_keys` and two later lines, one of them `is_an_expression`'s own docstring.
+  Measured, the move from 9 to 10 is *two additions and one removal*: `compute.tf:50` and
+  `check_no_secrets.py:220` appear, and `allowlist.py:81` — the unqualified `key` — drops out
+  because entry six of the sequence above narrowed the gate's key matching. The docstring
+  lines were present at `df63680` and were never additions. **The count went up while one of
+  its members was removed by a different exemption widening**, which is the part worth
+  keeping.
+
+Seven was correct-as-reported when written and is not the number to quote now; 10 is. The
+count of *bypasses* above is a different sequence and is unaffected.
 
 **Process note.** The narrowed predicate was stated to the human and approved before it was
 written, rather than written and explained afterwards — the sequence CLAUDE.md rule 1 asks

@@ -440,8 +440,16 @@ written down so a third does not need re-arguing.
 
 **A correction the disposition of F1 produced.** `df63680`'s commit message recorded that
 ungating raised **7** findings against the repo, and review 6 repeated the number.
-Re-measured at `874e808`: disabling the exemption raises **10**. The three additions are
-`compute.tf`'s `ssh_authorized_keys` and two lines committed after `df63680`, one of them
-`is_an_expression`'s own docstring. Seven was correct when written; ten is the number now.
-Recorded because this file is the record, and a number that quietly stopped being true is
-exactly what it exists to catch.
+Re-measured at `874e808`: disabling the exemption raises **10**. Seven was correct when
+written; ten is the number now. Recorded because this file is the record, and a number that
+quietly stopped being true is exactly what it exists to catch.
+
+*Amended after review 7's F3, which asked for the output behind the 10.* The 10 confirms
+([`runs/secrets-gate/ungated-scan-874e808.txt`](../../runs/secrets-gate/ungated-scan-874e808.txt)).
+The decomposition written above it did not: it said three additions, one of them
+`is_an_expression`'s own docstring. Measured, the same method at `df63680` raises **9**, not
+7, and 9 becomes 10 by *two additions and one removal* — `compute.tf:50` and
+`check_no_secrets.py:220` appear, `allowlist.py:81` drops out because the unqualified `key`
+narrowing exempted it. The docstring lines were already there. The 7 itself does not
+reproduce and its procedure was never written down, so it is recorded as not reproducing
+rather than as wrong.
