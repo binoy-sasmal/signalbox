@@ -76,20 +76,29 @@ What the reviewer's read-only property actually rests on — enforced tool scopi
 unenforced `Bash`, and restraint — is in [`limits.md`](limits.md), stated at its real size.
 The finding worth carrying: **prompt freshness is not evidence of hook wiring.**
 
-**Review position.** Six rows in [`reviews/log.md`](reviews/log.md). Two are VOID. The
-third is the probe, which adjudicated no work. The fourth, fifth and sixth —
-`0419f6b..09278d2`, `407dc67..f22366f` and `f22366f..874e808`, all 2026-08-29 — are the
-**valid reviews in this repo**, run from restarted sessions whose configuration was
-current. All three returned ESCALATE.
+**Review position.** Seven rows in [`reviews/log.md`](reviews/log.md). Two are VOID. The
+third is the probe, which adjudicated no work. The fourth through seventh —
+`0419f6b..09278d2`, `407dc67..f22366f`, `f22366f..874e808` and `874e808..HEAD`, all
+2026-08-29 — are the **valid reviews in this repo**, run from restarted sessions whose
+configuration was current. All four returned ESCALATE.
 
 So the claim that survives is the narrower one: **no valid review has adjudicated work in
-this repo.** Three have now read it and raised eleven findings and two observations
+this repo.** Four have now read it and raised fifteen findings and three observations
 between them, all actioned. The `0419f6b` gap is closed — `407dc67..f22366f` is
 `0419f6b~1..HEAD` and includes that commit.
 
 **Every valid review has escalated, and none has returned ACCEPT or REJECT.** That is a
 fact about the review process as much as about the work, and it is stated here rather
 than left to be noticed.
+
+**Review 7 named that pattern itself and asked for what would end it.** Its words: five
+consecutive escalations, zero merit adjudications, and *"a reviewer that only ever
+escalates is functionally close to no reviewer"*. It checked whether it was escalating
+reflexively, concluded not, and identified the cause as structural rather than a matter of
+verdict-setting: the credential-gate predicate and the OCI tenancy blocker sit in every
+range, so each keeps firing a halt until it is ruled on once. **Both rulings were given —
+see *Settled or scheduled*, below.** Neither instructs a reviewer to accept anything; they
+remove two standing halt triggers so a range can be ruled on at all.
 
 What the escalations put to the human, and what came back: the guard removal stands and
 Option 3 was confirmed as their decision; the voided reviews' F3–F7 and F9–F10 are
@@ -109,6 +118,25 @@ exemption waving through roughly half of all base64-shaped secrets, with no test
 suite able to fail on it. Accepting the gap was not wrong; the risk was stated first. It
 is now an observed cost rather than an abstract one.
 
+## Settled or scheduled — two rulings, 2026-08-29
+
+Recorded here because review 7 showed that neither was a question about a diff, and both
+were re-halting every range that contained them.
+
+**1. The narrowed expression predicate is APPROVED as it stands. Settled.** Including its
+accepted unmatched-opener gap, which is now pinned by a fixture, a bullet in
+[`limits.md`](limits.md) and ADR 0004 §13's eighth entry rather than closed. Closing it
+would require depth to return to zero plus a second carve-out for `AUTH_PARAM_PATTERNS = (`
+— two exemptions to defend instead of one — and that cost is measured, not asserted
+([`runs/secrets-gate/unmatched-opener-fail-first.txt`](../runs/secrets-gate/unmatched-opener-fail-first.txt)).
+**A future range containing this predicate is not a methodology change to the enforced
+gate.** A new change to it would be.
+
+**2. OCI versus Hetzner is a SCHEDULED decision, not an open question.** The 2026-09-05
+deadline stands and the decision is the human's on that date. Until then it is a recorded
+pending decision; a range that merely contains the blocker is not thereby escalatable. The
+blocker itself is real and unchanged — see *Next*, below.
+
 ## Next
 
 **Gate 2** (Terraform: OCI cloud floor), `docs/PLAN.md` section 7.
@@ -119,7 +147,15 @@ S3 backend, `validate` successful, and `plan` failing at `open ~/.oci/config: Th
 cannot find the path specified` — the blocker reported by Terraform rather than asserted
 here. The static checks now also run in CI on every push
 ([`terraform-check.yml`](../.github/workflows/terraform-check.yml)), so they are no longer
-a local claim. The gate's actual verification — *"destroy then apply produces a working
+a local claim.
+
+**Those two `plan` observations are now captures, not narrative.** Review 7's F2 found this
+paragraph and ADR 0008 asserting both the `~/.oci/config` failure and the `node_image_ocid`
+validation rejection with nothing under `runs/` behind either — review 6's F3 recurring one
+commit after its fix. [`runs/gate2/`](../runs/gate2/) holds both runs as an A/B pair one
+variable apart, so the rejection is visibly the validation rule firing rather than noise
+from the missing config. The same directory holds the image-refresh command tokenising
+correctly, after F4 found it had never been runnable. The gate's actual verification — *"destroy then apply produces a working
 SSH-able node. Twice. With no manual step"* — has not run and cannot until a tenancy
 exists. Decisions in [ADR 0008](decisions/0008-oci-cloud-floor.md).
 
@@ -133,7 +169,8 @@ this repo's evidence rules exist to prevent.
 
 **Decision deadline: 2026-09-05.** If the ticket is unresolved by then, the human decides
 between continuing to wait and falling back to **Hetzner CX32 (~EUR 7/month)**, already
-carried in `CLAUDE.md` as the settled fallback.
+carried in `CLAUDE.md` as the settled fallback. **This is a scheduled decision, not an open
+question** — see *Settled or scheduled*, above.
 [ADR 0008](decisions/0008-oci-cloud-floor.md) holds the reasoning for choosing OCI, so
 taking the fallback would be a **recorded reversal with its cost stated** — an amendment
 written against that reasoning, and a monthly bill where the Always Free allowance had
@@ -157,21 +194,24 @@ now actioned. That range covers Gate 1's work and Gate 2's configuration, and cl
 gap the previous version of this paragraph reported. Both methodology changes to the
 enforced credential gate (`df63680` and `f1d0951`) have now been read.
 
-**What is unreviewed is what came after it:** the six commits responding to review 6,
-`874e808..HEAD`, which include a third methodology change to that same gate — the
-narrowed expression predicate in `72506e4`. It ships with adversarial tests verified by
-making them fail, which is the standard the new hard rule in `CLAUDE.md` now requires, but
-nobody who did not write it has read it. That is the gap to state at the Gate 2
-boundary.
+**That gap is now closed.** Review 7 ran on 2026-08-29 over `874e808..HEAD` — the six
+commits responding to review 6, including the third methodology change to the credential
+gate — and returned **ESCALATE**: four findings and one observation, all actioned. The
+narrowed predicate has now been read by someone who did not write it, and the reading
+found a real gap in it (F1). See [`reviews/log.md`](reviews/log.md).
 
-**A review of that range was invoked on 2026-08-29 and did not run.** `/review
-874e808..HEAD` returned a session-quota error in place of a verdict: no adjudication, no
-rubric, no findings, nothing to report. It is recorded here because an unreviewed range
-looks identical whether a review was never asked for or was asked for and could not
-execute, and nothing else in this repo tells those two apart. Whether it also belongs in
-[`reviews/log.md`](reviews/log.md) as a row is left to the human — the tally there counts
-invocations and this was one, but it produced nothing to log. The range is unreviewed
-either way.
+**What is unreviewed is what came after that:** the four commits responding to review 7,
+this one included. Stated because it is the gap that exists at this boundary, not because
+it is unusual.
+
+**An earlier `/review` on the same range did not run.** It returned a session-quota error
+in place of a verdict: no adjudication, no rubric, no findings. It is recorded here because
+an unreviewed range looks identical whether a review was never asked for or was asked for
+and could not execute, and nothing else in this repo tells those apart. **It is not a row
+in [`reviews/log.md`](reviews/log.md), and that is decided by the rule already written
+there** — *"a `/review` invocation that produces no adjudication is not a row"* — not left
+open. The previous version of this paragraph deferred the question to the human while the
+log had already answered it; that was review 7's O1.
 
 Gate 2 re-verifies the OCI Always Free allowance before provisioning — `PLAN.md`
 section 3 marks that number as the one most likely to have moved.
@@ -181,4 +221,4 @@ fail** (ADR 0004 section 8, five worked examples). This applies directly to Gate
 an SLI over a window with too few samples reports a reassuring number rather than "no data",
 which is the same failure in a far more expensive place.
 
-**Last updated:** 2026-08-29
+**Last updated:** 2026-08-29 (UTC)

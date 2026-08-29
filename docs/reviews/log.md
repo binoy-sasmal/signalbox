@@ -60,6 +60,7 @@ diff, so anything persuasive in it arrives as framing rather than as evidence.
 | 2026-08-29 | *(self, in part)* `0419f6b..09278d2` | **ESCALATE** | 3 raised, 0 adjudicated | Halt under 4.2, 4.4 and the SKILL.md self-configuration touch, any one sufficient. Findings under items 1, 3, 4, 7, derived before the halt and not a verdict on the work. **First non-VOID review of any diff in this repo:** fresh session, clean tree, agent body at `HEAD`, and the agent's own symptom check found every section this range adds present in its prompt and the removed one absent. Escalated to the human unresolved; `0419f6b` itself remains outside the range and unreviewed. |
 | 2026-08-29 | *(self, in part)* `407dc67..f22366f` | **ESCALATE** | 4 raised, 0 adjudicated | Halt under 4.2, 4.4 and the SKILL.md self-configuration touch. Findings under items 1, 3, 6, 7, 8, 10. Range is `0419f6b~1..HEAD`, so it **includes `0419f6b`** and closes the gap the previous three rows named. All four findings actioned on the human's instruction: the scan-coverage claim made structural (`2b01a5b`), the status/log contradiction fixed and ruled against recurring (`084818c`), the `hooks:` claim narrowed to n=1 (`5b0205c`, `4dcd30e`), and the voided reviews' findings disposed of (`ca9f13f`) — F3–F7/F9–F10 recorded as unrecoverable rather than reconstructed. **Method on record:** the F1 fix was verified by making it fail, not by watching it pass — a tracked `policy/probe_tmp.rego` was added, the suite failed naming that path, and removing it returned 38 green. That is rubric item 3 applied to the fix itself: a test that only ever passes and a test that cannot fail look identical from outside. Do this for every gate added in response to a finding. |
 | 2026-08-29 | `f22366f..874e808` | **ESCALATE** | 4 raised + 2 observations, 0 adjudicated | Halt under 4.4 (two gate boundaries in one range -- Gate 1 declared passed and Gate 2 opened), 4.3 (two methodology changes to the enforced credential gate) and 4.1 (Gate 2 needs an OCI tenancy the human must create); any one sufficient. Findings under items 1, 3, 4, 6, 7, 9. **First review to read the deliberate gap** -- `f22366f..38a9542` is strictly inside this range. It read it and did not rule on it. All four findings and both observations actioned on the human's instruction; see *Findings in full*. F1 was fixed by the fail-first method this log records at row 5, and F2 is a process finding against the human as well as the builder. |
+| 2026-08-29 | `874e808..HEAD` | **ESCALATE** | 4 raised + 1 observation, 0 adjudicated | Halt under 4.3 (a third methodology change to the enforced credential gate, its governing rule written in the same commit), 4.2 (two recorded numbers moved) and 4.1 (a rejected OCI signup and a dated human decision); any one sufficient. Findings under items 1, 3, 6, 10. **The first review to name the escalation pattern itself** -- five consecutive escalations, zero merit adjudications -- and to say what would end it: a human ruling on the narrowed predicate and one on the OCI deadline, so that a later range containing neither can be adjudicated. Both rulings were given; see *Findings in full* and `docs/status.md`. An earlier `/review` on this same range returned a quota error and produced nothing: per the rule above it is not a row, and is recorded in `status.md`. |
 
 ### Why reviews 1 and 2 are VOID
 
@@ -453,3 +454,134 @@ The decomposition written above it did not: it said three additions, one of them
 narrowing exempted it. The docstring lines were already there. The 7 itself does not
 reproduce and its procedure was never written down, so it is recorded as not reproducing
 rather than as wrong.
+
+
+### Review 7 — `874e808..HEAD`, 2026-08-29, ESCALATE
+
+7 commits: the six responses to review 6, and the OCI signup rejection. The
+self-configuration check resolved clean — the range touches `CLAUDE.md` and not
+`.claude/agents/` or `.claude/skills/`, and the reviewer found the block `44ed34d` adds
+present verbatim in the copy it was serving.
+
+**F1 — the narrowed exemption accepts a single unmatched opener, which neither the tests
+nor `limits.md` record.** Rubric items 1 and 6. `has_bracket_structure` returns `seen`
+with the stack non-empty, deliberately, so that `AUTH_PARAM_PATTERNS = (` stays exempt.
+The consequence is that `api_key: sk-live-9f8e7d6c5b4a3210fedc(` — one appended character
+— is exempt, which is a *smaller* input than either gap the commit recorded. `limits.md`
+listed only the split literal and the nested pair `sk-live-abc(def)`, and
+`TestAcceptedExemptionGaps` pinned only those two. So a tracked artefact stated the gate
+as narrower than it is — and it is precisely what the new `CLAUDE.md` rule about testing
+the *parser* rather than the *intent* exists to catch, reproduced inside the fix for the
+finding that produced that rule. *What would close it:* a third
+`test_intentional_exemption_*` case planting an unmatched opener and a matching bullet in
+`limits.md`, or require depth to return to zero with an explicit carve-out for a line
+ending in an opener.
+**Disposed:** `cfd90ac`. **The human ruled the gap accepted rather than closed**, on the
+reasoning already recorded: depth-zero needs a second carve-out, and one exemption to
+defend beats two. Pinned instead — a third fixture, a third bullet in `limits.md`, and
+[ADR 0004 §13](../decisions/0004-probe-methodology.md)'s eighth entry. The cost of the
+ruling is verified rather than asserted: under `return seen and not stack` the suite
+fails on exactly the new fixture and `AUTH_PARAM_PATTERNS = (`
+([`runs/secrets-gate/unmatched-opener-fail-first.txt`](../../runs/secrets-gate/unmatched-opener-fail-first.txt)).
+
+**And a standing ruling, so this stops triggering halts: the narrowed predicate as it
+stands, with the unmatched-opener gap accepted, pinned and documented, is APPROVED. A
+future range containing it is not a methodology change to the enforced gate and is not
+grounds for a 4.3 halt on that basis.**
+
+**The entry this produced is the most useful one in ADR 0004 §13's sequence.** The eighth
+bypass was found inside the fix for the seventh, one commit after the rule that exists to
+catch it was written down, in tests written by an author who had just written it. The
+rule was correct and did not fire on its own author. That is the strongest available
+evidence that the mitigation has to be an outside reader planting inputs rather than the
+author's own care — an argument for this review process, produced by it.
+
+**F2 — Gate 2's only two adversarial observations existed solely as narrative, in the
+range whose theme is that narrative is not evidence.** Rubric items 3 and 9. ADR 0008 and
+`status.md` both stated that `plan` fails at `open ~/.oci/config` and that
+`node_image_ocid=ubuntu-24-04-aarch64` returns *Invalid value for variable*. Neither was
+under `runs/`: `runs/gate1/` held three captures and there was no `runs/gate2/`. This is
+review 6's F3 recurring one commit after F3's fix, inside an ADR whose own sentence is
+*"a validation nobody has seen reject anything is indistinguishable from one that
+cannot"*. *What would close it:* both `plan` invocations redirected to disk under `runs/`,
+to the standard `runs/gate1/` had just set.
+**Disposed:** `e7e362e`.
+[`runs/gate2/terraform-plan-blocked.txt`](../../runs/gate2/terraform-plan-blocked.txt)
+holds both runs as an A/B pair one variable apart, so that B being A minus the validation
+error is what makes the rejection in A the rule firing rather than noise from the missing
+config. `-lock=false` on purpose: `use_lockfile = true` means an ordinary `plan` writes
+and deletes a `.tflock` object, and a capture taken to prove a failure must not quietly
+falsify `runs/gate1/`'s claim that nothing in this repo has yet written to that bucket.
+
+**F3 — two numbers in the permanent record had no committed capture behind them.**
+Rubric items 3 and 10. ADR 0004 §13 and this log both recorded that disabling the
+exemption "raises **10**", correcting a previously recorded **7**; `72506e4`'s message
+added "56 tests green, 61 scanned 0 skipped". A number written into the record
+specifically to correct another number should arrive with the output that produced it.
+*What would close it:* the ungated scan output committed alongside, as Stage 0's runs
+were.
+**Disposed:** `21e62c3`, and it changed two of the claims it was meant to confirm. The 10
+confirms at `874e808`; 56 and 61 confirm at `72506e4`. **The 7 does not reproduce** — the
+same one-line disabling at `df63680` raises **9** — and the procedure behind the 7 was
+never written down, so it is recorded as not reproducing rather than as wrong. **The
+decomposition of how 7 became 10 was wrong**: measured, 9 becomes 10 by two additions and
+one *removal*, the removal being `allowlist.py:81` dropping out when the unqualified `key`
+narrowing exempted it. The count rose while one of its members was removed by a different
+exemption widening. Also recorded: "56 tests green" is the credential-gate suite, and the
+broad pattern in that suite's own docstring reports 58 with 2 import errors on a bare
+interpreter — CI is unaffected, because `secrets-check.yml` already splits the two
+patterns across an install-free job and an installing one.
+
+**The generalisation:** the numbers that needed capturing were not the ones that turned
+out to be wrong, and there was no way to know which was which without capturing.
+
+**F4 — the refresh command Decision 4's accepted cost depends on was not runnable.**
+Rubric item 10. `variables.tf` carried the image lookup as one physical comment line with
+embedded `#` characters mid-command; line-continuation backslashes had been lost. ADR
+0008's accepted cost for pinning the OCID is *"the refresh is a known maintenance task,
+with the lookup command next to the variable"* — the command **is** the mitigation, so a
+mitigation nobody had run was the cost going unpaid. *What would close it:* split it
+across comment lines or make it a valid one-liner, then verify it parses.
+**Disposed:** `e7e362e`, split across six comment lines and verified by tokenising rather
+than by reading — the lines are extracted from `variables.tf` by program, their leading
+`#` stripped, and sourced with `oci` replaced by a shim that prints the argv the shell
+built: 15 tokens, all six flags, both quoted values intact
+([`runs/gate2/refresh-command-parse.txt`](../../runs/gate2/refresh-command-parse.txt)).
+
+Two things the verification found that reading could not. The placeholder `<compartment>`
+is itself a parse hazard — bash reads it as a redirection — and is now quoted. And **F4's
+predicted consequence was one step milder than the truth**: the old line would not list
+every image unfiltered, it is a bash syntax error and runs nothing at all. Both controls
+are in the capture. Recorded because a capture that only confirmed the prediction would
+be worth less than one that corrected it.
+
+**O1 (observation) — the review record answered a question it simultaneously deferred.**
+`log.md` carries the rule *"a `/review` invocation that produces no adjudication is not a
+row"*, while `status.md` said whether the quota-failed invocation belongs as a row "is
+left to the human". The rule already decided it.
+**Disposed:** the human confirmed the rule decides it; `status.md` now says so rather than
+deferring.
+
+### The escalation pattern, named by review 7 and answered
+
+Review 7 stated it rather than leaving it implicit: **five consecutive escalations, zero
+merit adjudications across the whole log**, and *"a reviewer that only ever escalates is
+functionally close to no reviewer"*. It checked whether it was escalating reflexively and
+concluded not — 4.3 and 4.1 are unambiguous on this repo's own recorded precedent — and
+identified the cause as structural: the gate predicate and the tenancy blocker sit in
+every range, so they keep firing halts until each is ruled on once.
+
+**Both rulings were given on 2026-08-29 and are recorded in `docs/status.md` as settled or
+scheduled:**
+
+1. **The narrowed predicate is approved** with its unmatched-opener gap accepted, pinned
+   and documented. Not a methodology change in future ranges.
+2. **OCI versus Hetzner is a scheduled decision, not an open question.** The 2026-09-05
+   deadline stands and the decision is the human's on that date. Until then it is a
+   recorded pending decision, and a range that merely contains it is not thereby
+   escalatable.
+
+This is written here, not only in `status.md`, because the reviewer reads this file before
+it reads a diff and `status.md` only if it chooses to. **Neither ruling is an instruction
+to accept anything.** They remove two standing halt triggers so that a range can be
+adjudicated on its merits; what that adjudication returns is the reviewer's.
