@@ -84,8 +84,21 @@ The review clock restarts at Gate 1.
 
 ## Next
 
-**Gate 2** (Terraform: OCI cloud floor — VCN, subnet, gateway, route table, NSG,
-compute, block volume), `docs/PLAN.md` section 7. **Not started.**
+**Gate 2** (Terraform: OCI cloud floor), `docs/PLAN.md` section 7.
+**Configuration written and validated. NOT passed — blocked on an OCI account.**
+
+Observed so far, and it is all offline: `terraform init`, `terraform validate` and
+`terraform fmt -check` succeed for `infra/terraform/platform`. The gate's actual
+verification — *"destroy then apply produces a working SSH-able node. Twice. With no
+manual step"* — has not run and cannot until a tenancy exists. Decisions in
+[ADR 0008](decisions/0008-oci-cloud-floor.md).
+
+**Discharged early:** the Always Free allowance re-verification that `PLAN.md`
+section 3 requires at this gate. Unchanged on 2026-08-29 — [`metrics.md`](metrics.md).
+
+**Two values the operator must supply at apply time**, neither committed:
+`compartment_ocid` and `ssh_ingress_cidr`. The second has no default deliberately —
+it is a home IP, and this repo is public.
 
 **Review position for that boundary, stated now so it is not discovered later:**
 **no review has run over Gate 1's work.** The clock restarted at Gate 1 by the
