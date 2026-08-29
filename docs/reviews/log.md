@@ -61,9 +61,9 @@ in `8585810`, before review 2 — and its `CLAUDE.md` still carrying the
 only became registered partway through that session, so review 1 and review 2 did
 not even run from the same configuration as each other.
 
-**Their findings were not acted on**, except F8, which was fixed in `d5d98e5`
-because the defect was verifiable directly in the artefact and did not depend on
-which configuration reported it. F3 to F7 and F9 to F10 remain untouched.
+**Their findings are disposed of individually below.** The previous wording here
+was that they "were not acted on" and "remain untouched", which is a status, not a
+disposition.
 
 **Kept, not deleted.** A voided review in the record is evidence about the
 harness: it is what established the staleness rule now in `CLAUDE.md`. A deleted
@@ -74,6 +74,57 @@ keeping this file git-tracked at all.
 The verdict column records what the review returned; the VOID marking records
 whether it was from a configuration that existed. Those are different facts and
 the row keeps both.
+
+### Disposition of the voided reviews' findings
+
+Recorded 2026-08-29, on the human's instruction, after the review of
+`407dc67..f22366f` raised it. Voiding two reviews retires ten findings against the
+builder's own work; a retirement nobody has to justify is precisely the shape
+rubric item 7 exists to catch, so each is disposed of here rather than left
+standing as "untouched".
+
+**Recoverable, and closed:**
+
+- **F1, F2** — observations of review 2's own run: that the frontmatter `hooks:`
+  and `tools:` keys had not applied, and that the `CLAUDE.md` it received was
+  pre-`c9b7e64`. **Adjudicated by the configuration probe, and half overturned.**
+  `tools:` *was* applied and the `CLAUDE.md` *was* current; only the `hooks:` half
+  held, and that half is now [ADR 0006](../decisions/0006-reviewer-read-only-enforcement.md)
+  with the guard removed. Closed.
+- **F8** — the self-review limitation sat in the reviewer's first read, framing it
+  before it saw a diff. **Fixed in `d5d98e5`**, which moved it to
+  [`../limits.md`](../limits.md). Actioned despite the void because the defect was
+  checkable directly in the artefact and did not depend on which configuration
+  reported it. Closed.
+
+**Not recoverable: F3–F7 and F9–F10.**
+
+Their text was never written to this repo. It is in no commit, no earlier revision
+of this file and no commit message — checked with `git grep` across every revision
+reachable from `--all`. It lived in a session transcript that no longer exists.
+They cannot be enumerated, and no per-finding disposition can honestly be written.
+Reconstructing seven plausible findings from memory would be worse than the gap.
+
+Two things can be said about them without inventing their contents:
+
+1. **Anything raised against the guard is moot by construction.** All four files
+   under `.claude/hooks/` — the evaluator, the shell shim and both test suites —
+   are deleted at `HEAD`. A finding against code that no longer exists has nothing
+   left to attach to.
+2. **Everything else in that range has since been read by a valid review.** Review
+   2's range, `0419f6b..HEAD`, is a strict subset of `407dc67..f22366f`, reviewed
+   on 2026-08-29 from a current configuration. Whatever was still live against the
+   surviving artefacts had the opportunity to surface there. What surfaced was that
+   review's four findings, all since actioned.
+
+**That is a weaker guarantee than enumeration, and it is stated as one.** It is not
+"each was checked". It is: the artefacts they were raised against have since had a
+valid review, and the ones that no longer exist cannot carry a finding.
+
+The transferable lesson is the reason this section exists at all — **a finding that
+lives only in a transcript is a finding that can be lost.** Write findings into this
+log when the verdict arrives, not on the assumption that a range can be re-reviewed
+later. Re-review regenerates what is still true; it does not recover what was said.
 
 ### The 2026-08-29 configuration probe
 
