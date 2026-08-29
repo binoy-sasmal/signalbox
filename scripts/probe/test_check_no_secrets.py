@@ -559,5 +559,119 @@ class TestUnqualifiedKeyIsExemptForTheGateOnly(GateTestCase):
         self.assertTrue(findings, "query-parameter path was narrowed; it must not be")
 
 
+# AWS's published example secret access key exists in two circulating variants,
+# and they differ by one character in exactly the place that matters: one holds
+# `/` and the other `+`. The `/` form was already the fixture above; the `+`
+# form is the value the old exemption waved straight through, and its absence
+# from this suite was accident of fixture choice, not design. Both are AWS
+# documentation examples, not live credentials.
+AWS_SECRET_FIXTURE_PLUS = "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY"  # noqa: secret
+
+# Base64 output carrying a `+`. Half of all 40-character base64 secrets contain
+# at least one, which is the size of the hole this class exists to keep shut.
+BASE64_WITH_PLUS_FIXTURE = "cGF5bG9hZD9zaWduYXR1cmU+dg+K9fQzYmE1MWZm"  # noqa: secret
+
+
+class TestTheExpressionExemptionIsDefinedOverTheAlphabet(GateTestCase):
+    """Rule: is_an_expression may only exempt on syntax a credential cannot carry.
+
+    Review 6's F1. The predicate exempted any value containing one of
+    `()[]{}+,`, which mixes characters a credential CANNOT contain with
+    characters it CAN -- `+` is in the standard base64 alphabet. Every near-miss
+    test in this file missed it by fixture choice: the base64 case used
+    `c2VjcmV0Cg==`, the AWS case used the `/` variant, and the planted key is
+    `sk-live-...`. None contained a `+`.
+
+    The cases below are the parser's, not the intent's. ADR 0004 section 13
+    records why that distinction is the whole mitigation.
+    """
+
+    def test_the_aws_example_key_containing_a_plus_is_caught(self):
+        path = self.write("credentials", f"aws_secret_access_key = {AWS_SECRET_FIXTURE_PLUS}")
+        self.assertCaught(path, 1, "auth-shaped key")
+
+    def test_the_aws_example_key_containing_a_slash_is_still_caught(self):
+        """The control. It passed before the narrowing and must still pass."""
+        path = self.write("credentials", f"aws_secret_access_key = {AWS_SECRET_FIXTURE}")
+        self.assertCaught(path, 1, "auth-shaped key")
+
+    def test_base64_containing_a_plus_is_not_exempt(self):
+        path = self.write("cfg.yaml", f"api_key: {BASE64_WITH_PLUS_FIXTURE}")
+        self.assertCaught(path, 1, "auth-shaped key")
+
+    def test_a_value_containing_a_comma_is_not_exempt(self):
+        """`,` was dropped from the exemption entirely; nothing legitimate needed it."""
+        path = self.write("cfg.yaml", f"api_key: {REAL_KEY},{REAL_KEY}")
+        self.assertCaught(path, 1, "auth-shaped key")
+
+    def test_a_stray_closer_is_not_bracket_structure(self):
+        """What makes (A) structure rather than character presence.
+
+        This is the assertion that stops a future refactor collapsing the stack
+        scan back into a contains-a-bracket test: a contains-check passes
+        `abc)def` and the stack scan does not.
+        """
+        path = self.write("cfg.yaml", f"api_key: {REAL_KEY})def")
+        self.assertCaught(path, 1, "auth-shaped key")
+
+    def test_the_plus_operator_boundary_from_both_sides(self):
+        """One character either way. The same margin that hid the original hole."""
+        for value, exempt in ((f'"a" + "{REAL_KEY}"', True),
+                              (f"a+{REAL_KEY}", False),
+                              (f"a +{REAL_KEY}", False),
+                              (f"a+ {REAL_KEY}", False)):
+            with self.subTest(value=value, exempt=exempt):
+                path = self.write("cfg.yaml", f"api_key: {value}")
+                findings, _ = scan([path])
+                if exempt:
+                    self.assertEqual([], findings, f"{value!r} should stay exempt")
+                else:
+                    self.assertTrue(findings, f"{value!r} leaked through the operator rule")
+
+    def test_real_expressions_stay_exempt(self):
+        """The ten findings ungating raised against this repo, by shape.
+
+        If a narrowing of this predicate turns any of these red, the answer is a
+        different predicate -- not a wider exemption.
+        """
+        self.assertClean(self.write(
+            "expressions.py",
+            "ssh_authorized_keys = file(pathexpand(var.ssh_public_key_path))",
+            "AUTH_PARAM_PATTERNS = (",
+            "GATE_KEY_NAME_EXEMPTIONS = frozenset({\"key\"})",
+            '    "auth": probe.cfg.get("auth"),',
+            '    "median_key_persistence_semantic": rounded(median_semantic_persistence),',
+        ))
+
+
+class TestAcceptedExemptionGaps(GateTestCase):
+    """INTENTIONAL EXEMPTIONS. These assert holes, not protections.
+
+    Both are deliberate: the gate's threat model is the accidental commit, and
+    each of these takes a decision to produce. They are pinned as fixtures
+    rather than left to `docs/limits.md` alone, because an accepted gap with a
+    test is a decision, while one recorded only in prose is something the next
+    person closes or widens without realising it was deliberate.
+
+    **If one of these starts failing, the gate got STRICTER.** That is not a
+    regression to revert on sight -- read the reasoning in `is_an_expression`
+    and `docs/limits.md`, then either delete the test deliberately or restore
+    the exemption deliberately.
+    """
+
+    def test_intentional_exemption_split_literal(self):
+        """`api_key = "sk-" + "live-real"` is exempt. Deliberate bypass, not accident."""
+        self.assertClean(self.write("cfg.py", 'api_key = "sk-live" + "-9f8e7d6c5b4a3210fedc"'))
+
+    def test_intentional_exemption_credential_with_nested_brackets(self):
+        """`sk-live-abc(def)` is exempt: a bracket is outside every credential alphabet.
+
+        Accepted on the reasoning that no real credential format this project
+        handles -- base64, base64url, hex, JWT -- admits a bracket at all, so
+        the value below is not a shape a pasted secret arrives in.
+        """
+        self.assertClean(self.write("cfg.yaml", "api_key: sk-live-abc(def)"))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

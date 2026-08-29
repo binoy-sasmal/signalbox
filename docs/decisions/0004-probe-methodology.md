@@ -276,6 +276,55 @@ it before the first false positive, not after. The sanitiser wants recall, the g
 precision, and a gate that cries wolf teaches people to route around it — which this repo
 already argues elsewhere and then did to itself.
 
+**An exemption predicate must be defined over the complement of the protected value's
+alphabet.** Recorded 2026-08-29, after review 6's F1. This is the seventh value-parsing
+bypass in an exemption here, and the first one where the general rule is stateable.
+
+`is_an_expression()` exempted any value containing one of `()[]{}+,`, on the reasoning that
+a credential is a single opaque token and syntax means code. The reasoning was right and
+the predicate did not implement it: **it mixed characters a credential CANNOT contain with
+characters it CAN.** `+` and `,` are the second kind — `+` is in the standard base64
+alphabet, so roughly half of all base64-shaped secrets carried their own exemption with
+them. AWS's own published example secret key circulates in two variants differing by one
+character, `/` against `+`; the gate caught one and waved the other through.
+
+The narrowing keeps two disjuncts and deletes the rest: bracket structure, verified by a
+stack scan rather than by character presence, and a `+` flanked by whitespace on both
+sides. No credential format this project handles — base64, base64url, hex, JWT — admits a
+bracket, and base64 `+` is never space-flanked. Both are outside the alphabet. Nothing
+inside it is exempt any more.
+
+**Seven is a design property, not luck.** The sequence: the numeric exemption, the
+placeholder substring match, the angle-bracket value class, the suffix allow-list, the
+shared `is_auth_param` predicate, the unqualified `key` narrowing, and now the expression
+predicate. *Every guard in this repo that parses a value has eventually been bypassed
+through the parsing.* A predicate over a value's characters is a small parser, and a small
+parser written to admit the cases in front of its author will admit cases its author did
+not think of. Expecting the next one to be different is the error.
+
+**So the mitigation is not better predicates. It is that an exemption ships with an
+adversarial test targeting its parser specifically, not its intent.** A test of intent
+plants what the author already imagined; a test of the parser plants what the *predicate*
+accepts and the author did not mean. The difference is measurable here: three tests came
+within one character of the hole — a base64 case, an AWS case and a planted key — and all
+three missed because no fixture happened to contain a `+`. Fixture choice was doing the
+work the test was supposed to do.
+
+Two accepted gaps now ship as fixtures marked *intentional exemption* rather than living in
+`docs/limits.md` alone. An accepted gap with a test is a decision; one recorded only in
+prose is something the next person closes or widens without knowing it was deliberate.
+
+*A correction to the record.* The commit that added this exemption reported that ungating
+raised **7** findings against the repo. Re-measured 2026-08-29 at `874e808`, disabling the
+exemption raises **10** — the three additions are `compute.tf`'s `ssh_authorized_keys` and
+two lines committed afterwards, one of them `is_an_expression`'s own docstring. Seven was
+correct when written and is not the number to quote now. The count of *bypasses* above is a
+different sequence and is unaffected.
+
+**Process note.** The narrowed predicate was stated to the human and approved before it was
+written, rather than written and explained afterwards — the sequence CLAUDE.md rule 1 asks
+for and the one ADR 0006 and ADR 0008 were both found not to have followed.
+
 ## Consequences
 
 - `header_timestamp_trust` and the dedup key both become tenant schema facts derived from measured

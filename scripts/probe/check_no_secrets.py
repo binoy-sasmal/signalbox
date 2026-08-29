@@ -138,6 +138,38 @@ def is_not_a_credential(value: str) -> bool:
     return len(value) <= MAX_NUMERIC_EXEMPT_LEN
 
 
+# Bracket syntax, and the one operator that has to survive. See is_an_expression
+# for why these two are the whole set.
+BRACKET_OPENERS = "([{"
+BRACKET_PAIRS = {")": "(", "]": "[", "}": "{"}
+SPACED_CONCATENATION = re.compile(r"\s\+\s")
+
+
+def has_bracket_structure(value: str) -> bool:
+    """Whether the value carries bracket syntax rather than a bracket character.
+
+    Scanned left to right with a stack. A closer with no matching opener is not
+    syntax -- `abc)def` is a malformed value, not an expression -- and returns
+    False so it stays in scope.
+
+    Depth is allowed to end ABOVE zero. `AUTH_PARAM_PATTERNS = (` is the first
+    line of a multi-line tuple and must stay exempt; requiring depth to return
+    to zero would need a second carve-out for it, and one exemption to defend
+    beats two.
+    """
+    stack: list[str] = []
+    seen = False
+    for character in value:
+        if character in BRACKET_OPENERS:
+            stack.append(character)
+            seen = True
+        elif character in BRACKET_PAIRS:
+            seen = True
+            if not stack or stack.pop() != BRACKET_PAIRS[character]:
+                return False
+    return seen
+
+
 def is_an_expression(value: str) -> bool:
     """Values that are code rather than a literal, whatever the key is called.
 
@@ -150,21 +182,54 @@ def is_an_expression(value: str) -> bool:
         "auth": probe.cfg.get("auth"),
         AUTH_HEADER = "Authorization" + ": " + "Bearer " + REAL_KEY
 
-    None is a secret and none is a literal. A credential is a single opaque
-    token, so a value carrying bracket or operator syntax is not one.
+    None is a secret and none is a literal.
 
-    Whitespace is deliberately NOT a signal. A passphrase may contain spaces,
-    and exempting on whitespace would put `password = correct horse battery`
-    outside the gate.
+    **The predicate is defined over the complement of the credential alphabet.**
+    Narrowed 2026-08-29 after review 6, on the human's approval, given before
+    the change was written. The previous version exempted any value containing
+    one of `()[]{}+,` -- which mixes characters a credential CANNOT contain with
+    characters it CAN. `+` is in the standard base64 alphabet, so roughly half
+    of all base64-shaped secrets were waved straight through, including AWS's
+    own published example key. That is the seventh value-parsing bypass in an
+    exemption here; ADR 0004 section 13 records the shape.
+
+    Two disjuncts survive, each requiring syntax in a position a token cannot
+    occupy:
+
+    - **Bracket structure** -- correctly nested, via has_bracket_structure.
+      No credential format this project handles (base64, base64url, hex, JWT)
+      admits a bracket at all.
+    - **A `+` flanked by whitespace on BOTH sides.** Base64 padding and
+      alphabet `+` are never space-flanked. `a + b` is an expression; `a+b`
+      and `a +b` are values.
+
+    `,` was dropped entirely: no real expression here needs it, because every
+    legitimate comma sits inside brackets and a trailing one is normalised away
+    below. It was pure exemption surface.
+
+    Only `+` is admitted as an operator. `-`, `*`, `/`, `|` and `&` have no
+    caller in this repo, and each would be new surface; one arrives with its
+    own adversarial test or not at all.
+
+    Whitespace alone is deliberately NOT a signal. A passphrase may contain
+    spaces, and exempting on whitespace would put `password = correct horse
+    battery` outside the gate.
 
     Surrounding quotes and parentheses are stripped first, so `("sk-live-...")`
     is judged on the literal inside rather than waved through for having
     brackets around it.
 
-    Known and accepted gap: a literal split across an operator --
-    `api_key = "sk-" + "live-real"` -- reads as an expression and is exempt.
-    That is a deliberate bypass, not an accidental commit, and this gate's
-    threat model is the accident. Recorded in docs/limits.md.
+    Two known and accepted gaps, both fixture-pinned in the suite rather than
+    recorded only in prose, so that neither is closed or widened by someone who
+    did not know it was deliberate:
+
+    - A literal split across an operator -- `api_key = "sk-" + "live-real"` --
+      reads as an expression and is exempt.
+    - A credential carrying a nested bracket pair -- `sk-live-abc(def)` -- is
+      exempt.
+
+    Both are deliberate bypasses rather than accidental commits, and this
+    gate's threat model is the accident. Recorded in docs/limits.md.
     """
     stripped, previous = value.strip(), None
     while stripped != previous:
@@ -177,7 +242,7 @@ def is_an_expression(value: str) -> bool:
         stripped = stripped.strip().strip("\"'").rstrip(",").strip()
         if stripped.startswith("(") and stripped.endswith(")"):
             stripped = stripped[1:-1]
-    return bool(re.search(r"[()\[\]{}+,]", stripped))
+    return has_bracket_structure(stripped) or bool(SPACED_CONCATENATION.search(stripped))
 
 
 def walk_json(node, path: str = ""):
