@@ -102,3 +102,71 @@ live. Success is the expected outcome either way and tells you nothing on its ow
 Normalise the path to forward slashes: a character allow-list that refuses
 backslashes would deny a Windows path before the `-C` rule is ever reached, which
 is a denial for the wrong reason.
+
+
+## The credential gate cannot fire on the case it exists for
+
+Recorded 2026-08-29, after an AWS `credentials` file was created at `.aws/credentials`
+inside this repo instead of `~/.aws`. It was caught by reading a directory listing.
+No gate was involved, and — measured, not assumed — no gate would have been.
+
+This is rubric item 3 turned on our own check: **a gate that cannot fire and a gate
+with nothing to fire on look identical from outside** is this repo's own sentence,
+written in `check_no_secrets.py`'s test suite. It applies here.
+
+### Half one: scope. It walks tracked files.
+
+`main()` with no arguments calls `tracked_files()` — `git ls-files`. An untracked
+credential in the working tree is invisible to it. While `.aws/credentials` sat in
+this repo, the gate reported `passed (49 file(s) scanned, 0 skipped)`, and both
+statements were true at once.
+
+So **a pass means "no tracked file violates the rules", never "the working tree is
+clean."** The first moment a credential file becomes visible to the tracked-file scan
+is the commit that adds it.
+
+### Half two, worse: the rule that would fire is gated on file suffix.
+
+Found while checking half one, and it is the more serious of the two.
+`check_no_secrets.py` restricts its `key = value` rule to a suffix set —
+`.yaml .yml .json .toml .ini .cfg .env .tfvars`. An AWS credentials file is
+**extensionless**. `is_scannable()` admits it, so it is counted as scanned, and then
+the one rule that would have caught it never runs.
+
+Measured with a synthetic AWS key pair, never the real one:
+
+| File | Result |
+|---|---|
+| `credentials` (extensionless) | `passed (1 file(s) scanned, 0 skipped)` |
+| identical bytes as `creds.ini` | **FAILED** — `auth-shaped key 'aws_secret_access_key' holds a literal value` |
+| identical bytes as `creds.env` | **FAILED** — same finding |
+
+The consequence, stated plainly: **had `git add -A` staged `.aws/credentials`, neither
+the pre-commit hook nor the CI job would have stopped the commit.** The pre-commit
+hook scans staged paths and CI scans tracked paths; both would have scanned this file
+and both would have passed it.
+
+This is the same shape as the finding that produced `2b01a5b` — `is_scannable()` was
+widened to admit extensionless files precisely because a credential ends up in one,
+and the strongest rule was left gated on suffix, so the widening bought less than it
+appeared to. Rubric item 1 again: an exemption satisfied by an input that does not
+satisfy its intent.
+
+Note also that `TestEveryTrackedFileIsInScope` does **not** cover this. It asserts a
+tracked file is *scanned*; it says nothing about which rules then apply to it.
+
+### What would close each half
+
+- **Scope.** Scan untracked-but-unignored working-tree files, as a pre-commit concern
+  rather than a tracked-file one. The tracked-file scan is the wrong instrument: by
+  the time a file is tracked the decision has been made. `git status --porcelain
+  --untracked-files=all` minus ignored paths is the candidate set.
+- **The suffix gate.** Apply the `key = value` rule to extensionless files too — the
+  same widening `is_scannable()` already received, in the same direction and for the
+  same reason.
+
+**Deliberately not implemented on 2026-08-29.** Recorded on the human's instruction
+so that Gate 1 is not blocked on it. Until it is done, `.gitignore`'s credential
+patterns are the only thing standing between `git add -A` and a pushed key — and an
+ignore rule is not a gate: `git add -f` overrides it, and it covers only the paths
+someone thought of in advance.
