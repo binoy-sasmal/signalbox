@@ -97,6 +97,16 @@ Option 2 was not attempted. A project-level hook would fire for the builder too,
 which is a different and larger change, and its wiring would rest on the same
 unverified harness behaviour that Option 3 exists to stop relying on.
 
+*A cost Option 2 acquired in this same range, after the option list was written.*
+`24c0234` gitignored `.claude/settings.json` as local state — it holds
+machine-absolute interpreter paths and session-scoped scratchpad paths. That is the
+file Option 2's wiring would live in. So reopening Option 2 today means a hook that
+is invisible to git, does not rebuild from a clone, is unreadable by any future
+reviewer, and falls outside this repo's own credential scan, which walks tracked
+files only. The first question is no longer whether the hook fires; it is how its
+shared part gets tracked at all. Recorded because it is not visible from the option
+list above.
+
 **Better a smaller true claim than a larger one that needs a probe before every
 use.**
 
