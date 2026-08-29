@@ -20,6 +20,28 @@ finding when none has run since the previous gate.
 each verdict. A builder could omit a REJECT, but the omission is visible in git
 history, which is more than opaque memory would offer.
 
+## Open limitation: the reviewer cannot be the sole reviewer of its own construction
+
+Rows marked *(self)* below reviewed the review machinery itself. That is the one
+subject where this agent has the conflict its own rubric item 7 exists to catch:
+the incentive runs one way, and a reviewer that finds its own construction sound
+has told you very little.
+
+It is not solved in this repo, and no attempt should be made to solve it here. A
+second reviewer would have the same blind spot for the same reason, and a rule
+forbidding self-review would only mean the machinery goes unreviewed. **The human
+gate-boundary review is what covers it** — see the review-position rule in
+CLAUDE.md.
+
+Recorded rather than mitigated, because a limitation written down is one an
+interviewer can be walked through, and a limitation quietly worked around is one
+that gets discovered.
+
+The evidence so far is encouraging but not conclusive: on its first run the agent
+raised eight findings against the four commits that built it, seven of which
+verified. That is evidence it does not simply approve itself. It is not evidence
+that it found everything.
+
 ## Format
 
 | Date | Range reviewed | Verdict | Findings | Notes |
@@ -36,4 +58,4 @@ history, which is more than opaque memory would offer.
 
 | Date | Range reviewed | Verdict | Findings | Notes |
 |---|---|---|---|---|
-| 2026-08-29 | `b1626f2..HEAD` (the review agent's own construction) | no verdict returned | 8 raised, 7 confirmed | Findings under items 1, 3, 9, 10. One claim (`context: fork` inherits conversation history) checked against the live docs and found wrong. The agent did not emit a VERDICT line, a tally, or the rubric table -- a defect in the agent, recorded here rather than smoothed over. |
+| 2026-08-29 | *(self)* `b1626f2..HEAD` — the review agent's own construction | no verdict returned | 8 raised, 7 confirmed | Findings under items 1, 3, 9, 10. One claim (`context: fork` inherits conversation history) checked against the live docs and found wrong. The agent did not emit a VERDICT line, a tally, or the rubric table -- a defect in the agent, recorded here rather than smoothed over. |
