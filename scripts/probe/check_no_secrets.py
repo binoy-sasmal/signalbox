@@ -138,6 +138,48 @@ def is_not_a_credential(value: str) -> bool:
     return len(value) <= MAX_NUMERIC_EXEMPT_LEN
 
 
+def is_an_expression(value: str) -> bool:
+    """Values that are code rather than a literal, whatever the key is called.
+
+    Sibling of is_not_a_credential: both answer "this cannot be a secret" from
+    the value's own shape rather than from intent. This one exists because
+    ungating the key = value rule from file suffix brought source files into
+    scope, where an auth-shaped name is routinely bound to an expression:
+
+        AUTH_PARAM_PATTERNS = (
+        "auth": probe.cfg.get("auth"),
+        AUTH_HEADER = "Authorization" + ": " + "Bearer " + REAL_KEY
+
+    None is a secret and none is a literal. A credential is a single opaque
+    token, so a value carrying bracket or operator syntax is not one.
+
+    Whitespace is deliberately NOT a signal. A passphrase may contain spaces,
+    and exempting on whitespace would put `password = correct horse battery`
+    outside the gate.
+
+    Surrounding quotes and parentheses are stripped first, so `("sk-live-...")`
+    is judged on the literal inside rather than waved through for having
+    brackets around it.
+
+    Known and accepted gap: a literal split across an operator --
+    `api_key = "sk-" + "live-real"` -- reads as an expression and is exempt.
+    That is a deliberate bypass, not an accidental commit, and this gate's
+    threat model is the accident. Recorded in docs/limits.md.
+    """
+    stripped, previous = value.strip(), None
+    while stripped != previous:
+        previous = stripped
+        # rstrip(",") before the search, the same normalisation
+        # is_not_a_credential does. A trailing comma is the punctuation of the
+        # surrounding format, not an operator in the value. Without this,
+        # `"median_key_persistence": "<a real key>",` read as an expression and
+        # was exempted -- caught by an existing regression test, not by review.
+        stripped = stripped.strip().strip("\"'").rstrip(",").strip()
+        if stripped.startswith("(") and stripped.endswith(")"):
+            stripped = stripped[1:-1]
+    return bool(re.search(r"[()\[\]{}+,]", stripped))
+
+
 def walk_json(node, path: str = ""):
     """Yield (json_path, key, value) for every mapping entry."""
     if isinstance(node, dict):
@@ -322,18 +364,31 @@ def check_text_file(path: Path, auth_key_rule: bool = True) -> list[Finding]:
                     "authenticate by query parameter.",
                 ))
 
-        # key: value / key = value in config-shaped files. JSON is excluded:
-        # check_json_types answers the same question by parsing, where types are
-        # unambiguous, so having both would only let them disagree.
+        # key: value / key = value in ANY scannable file.
+        #
+        # Deliberately not gated on suffix. It was, and that reopened the hole
+        # is_scannable() had just been widened to close: an AWS `credentials`
+        # file has no extension, so it was admitted, counted as scanned, and
+        # then exempted from the only rule that would have caught it. Measured
+        # 2026-08-29 -- extensionless passed, identical bytes as .ini failed.
+        # Adding "" to the suffix set would have left `.rego`, `.conf` and
+        # `.tpl` exempt for the same reason, which is the same defect one
+        # suffix over. The rule carries its own specificity: an auth-shaped key
+        # name AND a value that survives the placeholder and numeric
+        # exemptions.
+        #
+        # JSON is still excluded, via auth_key_rule: check_json_types answers
+        # the same question by parsing, where types are unambiguous, so having
+        # both would only let them disagree.
         match = re.match(r"""\s*["']?([A-Za-z0-9_.\-]+)["']?\s*[:=]\s*(.+?)\s*$""", line)
-        if match and auth_key_rule and path.suffix in {".yaml", ".yml", ".json", ".toml",
-                                                       ".ini", ".cfg", ".env", ".tfvars"}:
+        if match and auth_key_rule:
             name, value = match.group(1), match.group(2).strip().strip("\"'")
             if not is_auth_param(name) or not value:
                 continue
             benign = (
                 is_placeholder(value)
                 or is_not_a_credential(value)
+                or is_an_expression(value)
                 or value.startswith(("$", "#"))
                 or name.lower().endswith(POINTER_SUFFIXES)
             )

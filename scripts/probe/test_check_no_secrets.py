@@ -30,10 +30,20 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from check_no_secrets import is_scannable, scan, tracked_files  # noqa: E402
 
-REAL_KEY = "sk-live-9f8e7d6c5b4a3210fedc"
+# The gate now applies its key = value rule to every scannable file, source
+# included, so this fixture trips it. That is correct: it IS a
+# credential-shaped literal under an auth-shaped name. The escape marker
+# exists for exactly this -- the gate's own adversarial fixtures -- and is
+# honoured only in this file.
+REAL_KEY = "sk-live-9f8e7d6c5b4a3210fedc"  # noqa: secret
 # Assembled rather than written out, the same way MARKER is below, so this
 # file does not itself carry the literal the gate exists to catch.
 AUTH_HEADER = "Authorization" + ": " + "Bearer " + REAL_KEY
+
+# AWS's own published documentation example pair -- not a live credential.
+# Present because the hole this suite now guards was found with a real-shaped
+# AWS credentials file, and the fixture should keep that shape.
+AWS_SECRET_FIXTURE = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"  # noqa: secret
 
 
 class GateTestCase(unittest.TestCase):
@@ -419,6 +429,88 @@ class TestEveryTrackedFileIsInScope(unittest.TestCase):
             "check covers every committed file. Add the suffix to "
             "TEXT_SUFFIXES, or narrow the claim -- but do not leave the two "
             "disagreeing.",
+        )
+
+
+class TestCredentialsFileIsCaughtWithoutAnExtension(GateTestCase):
+    """Regression for a hole that was open and measured, not hypothetical.
+
+    is_scannable() was widened to admit extensionless files precisely because a
+    credentials file has no extension. The key = value rule stayed gated on a
+    suffix allow-list, so such a file was admitted, counted as scanned, and then
+    exempted from the only rule that would have caught it. Measured 2026-08-29:
+    an AWS credentials file passed with no extension and failed as `.ini` on
+    identical bytes.
+
+    The gate reported `passed (1 file(s) scanned, 0 skipped)` while holding an
+    AWS key pair. Neither the pre-commit hook nor CI would have stopped the
+    commit that added it.
+    """
+
+    def _aws_credentials(self, name: str) -> Path:
+        return self.write(
+            name,
+            "[signalbox]",
+            "aws_access_key_id = AKIAIOSFODNN7EXAMPLE",
+            f"aws_secret_access_key = {AWS_SECRET_FIXTURE}",
+        )
+
+    def test_extensionless_credentials_file_is_caught(self):
+        self.assertCaught(self._aws_credentials("credentials"), 3, "auth-shaped key")
+
+    def test_identical_bytes_under_ini_are_still_caught(self):
+        self.assertCaught(self._aws_credentials("creds.ini"), 3, "auth-shaped key")
+
+    def test_the_suffix_is_not_what_decides(self):
+        """The two above must agree. If they ever diverge, the gate is back."""
+        bare, _ = scan([self._aws_credentials("credentials")])
+        ini, _ = scan([self._aws_credentials("creds.ini")])
+        self.assertEqual(
+            [f.message for f in bare], [f.message for f in ini],
+            "extensionless and .ini disagree, so file type is deciding whether "
+            "the rule runs -- which is the defect this class exists for",
+        )
+
+
+class TestTheRulesRunOnEveryTrackedSuffix(GateTestCase):
+    """`scanned` is not `checked`, and that gap is what hid the hole.
+
+    TestEveryTrackedFileIsInScope asserts a tracked file is scanned. It cannot
+    see a file that is scanned and then exempted from every rule that matters,
+    which is exactly what happened to extensionless files. This asserts the
+    rule actually fires, once per suffix present in the real tree, so a suffix
+    arriving later that the rules do not reach fails here.
+    """
+
+    def _tracked_suffixes(self) -> list[str]:
+        repo_root = Path(__file__).resolve().parents[2]
+        previous = Path.cwd()
+        os.chdir(repo_root)
+        try:
+            return sorted({path.suffix for path in tracked_files()})
+        except subprocess.CalledProcessError:
+            self.skipTest("not a git repository")
+        finally:
+            os.chdir(previous)
+
+    def test_a_planted_credential_is_caught_under_every_tracked_suffix(self):
+        uncaught = []
+        for suffix in self._tracked_suffixes():
+            name = f"planted{suffix}" if suffix else "credentials"
+            if suffix == ".json":
+                # Valid JSON is answered by check_json_types, not the line rule.
+                path = self.write(name, json.dumps({"api_key": REAL_KEY}, indent=2))
+            else:
+                path = self.write(name, "[section]", f"api_key = {REAL_KEY}")
+            findings, checked = scan([path])
+            if checked != 1 or not findings:
+                uncaught.append(f"{name} (scanned={checked}, findings={len(findings)})")
+
+        self.assertEqual(
+            [], uncaught,
+            "a planted credential survived under a suffix that exists in this "
+            "repo. The file may be scanned and still be exempt from every rule "
+            "that matters -- see docs/limits.md.",
         )
 
 
