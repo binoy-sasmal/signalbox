@@ -18,6 +18,33 @@ What this does not prove: that Claude Code accepts the frontmatter and honours
 the decision. Only Claude Code can demonstrate that, and no test here should be
 read as evidence of it.
 
+## The standing live-wiring probe: `git -C <path> diff`
+
+To check whether the hook is actually firing in a running review -- which is the
+gap above, and cannot be closed from inside this file -- ask the reviewer to run:
+
+    git -C <absolute path to the repo> diff
+
+`-C` is a pre-subcommand git option and the guard refuses it (`review_readonly_
+guard.py`, "git option '-C' before the subcommand"), asserted below. If the
+command returns a diff, the hook is not firing.
+
+Three reasons this is the standing method rather than `rm -rf` or any other
+destructive command:
+
+- **It is non-destructive.** A probe that has to succeed at damage to prove a
+  guard works can only be run somewhere the damage is acceptable, which is never
+  the repo you care about.
+- **It is denied for a structural reason, not a listed one.** `-C` changes which
+  repository the subcommand acts on, so refusing it is load-bearing rather than
+  incidental, and it will not quietly drop off a deny-list.
+- **It does not ask an agent to attack its own restraints.** This matters more
+  than it looks. When the destructive form was tried, the reviewer refused it and
+  was right to: a launching agent's instruction is not the human's consent, and a
+  result produced by an agent deliberately probing its own limits is not evidence
+  anyone can independently check. A probe the reviewer can run in good conscience
+  is a probe that will actually get run.
+
 Run:  py -3 -m unittest discover -s .claude/hooks -p 'test_*.py' -v
 """
 
@@ -155,6 +182,17 @@ class TestHookCommandBehaviour(unittest.TestCase):
         payload = json.dumps({"tool_input": {"command": "git commit -m x"}})
         result = run_hook(self.command, payload, os.path.join(PROJECT_DIR, "docs"))
         self.assertEqual(self._decision(result), "deny")
+
+    def test_the_standing_live_wiring_probe_is_denied(self):
+        # If this ever starts passing through, the documented probe in this
+        # module's docstring stops meaning anything and the live-wiring check
+        # silently becomes a no-op -- a test that cannot fire, checking a hook
+        # that cannot fire.
+        probe = 'git -C "%s" diff' % PROJECT_DIR
+        payload = json.dumps({"tool_input": {"command": probe}})
+        result = run_hook(self.command, payload, PROJECT_DIR)
+        self.assertEqual(self._decision(result), "deny")
+        self.assertIn("before the subcommand", result.stdout)
 
     def test_deny_output_is_a_single_json_object(self):
         # Two decisions on stdout would be malformed, and the failure mode of a
