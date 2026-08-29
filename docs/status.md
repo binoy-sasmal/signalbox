@@ -37,11 +37,15 @@ What the reviewer's read-only property actually rests on — enforced tool scopi
 unenforced `Bash`, and restraint — is in [`limits.md`](limits.md), stated at its real size.
 The finding worth carrying: **prompt freshness is not evidence of hook wiring.**
 
-**Review position.** Three rows in [`reviews/log.md`](reviews/log.md). Two are VOID. The
-third is the probe, which adjudicated no work. **No valid review has run against any work
-in this repo.** `0419f6b` onward, the guard removal included, has never been validly
-reviewed — and the removal cannot be reviewed from the session that made it, because it
-changes `.claude/agents/`.
+**Review position.** Four rows in [`reviews/log.md`](reviews/log.md). Two are VOID. The
+third is the probe, which adjudicated no work. The fourth, `0419f6b..09278d2` on
+2026-08-29, is the **first valid review in this repo** — run from a restarted session
+whose configuration was current — and it returned ESCALATE, halting before it ruled on
+the substance.
+
+So the claim that survives is the narrower one: **no valid review has adjudicated work in
+this repo.** One has now read it and raised findings. `0419f6b` itself remains outside
+every range reviewed so far.
 
 ## Next
 

@@ -100,6 +100,14 @@ during a stretch where `/review` was simply never run is indistinguishable from 
 during a stretch where it was. A run of good work is exactly when the gap opens, because
 nothing feels wrong.
 
+**A log row and the status line move in the same commit.** Appending a row to
+`docs/reviews/log.md` and updating the review position in `docs/status.md` are two
+statements of one fact, so they ship together. They drifted apart once already:
+`status.md` read "three rows — no valid review has run against any work in this repo"
+while the log had four and named one of them the first valid review. Nothing in this
+repo detects that. Both are tracked prose, each one reads as correct on its own, and the
+contradiction is only visible to someone who opens both.
+
 `/review` runs the `gate-reviewer` agent in an isolated context that cannot see the
 conversation. It reads artefacts, not your account of them — so do not summarise the work to
 it, and do not treat its ACCEPT as agreement with your reasoning. It never saw your reasoning.
