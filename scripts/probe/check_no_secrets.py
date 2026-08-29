@@ -346,12 +346,38 @@ def check_text_file(path: Path, auth_key_rule: bool = True) -> list[Finding]:
     return findings
 
 
+def is_scannable(path: Path) -> bool:
+    """Whether a tracked file gets scanned.
+
+    Suffix-based selection alone left three tracked files unscanned --
+    `.gitignore`, `.gitattributes` and `.githooks/pre-commit` -- because
+    Path.suffix is empty for a dotfile and for an extensionless script. The
+    last of those is a shell script, which is exactly the kind of file a
+    credential ends up in, and CLAUDE.md claims this check covers every
+    committed file. The claim and the code have to agree; this closes the gap
+    in the direction that keeps the stronger guarantee.
+
+    An extensionless file is scanned when it decodes as UTF-8, which is how a
+    binary without a suffix stays out without needing a second allow-list to
+    maintain.
+    """
+    if path.suffix in TEXT_SUFFIXES:
+        return True
+    if path.suffix:
+        return False
+    try:
+        path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return False
+    return True
+
+
 def scan(paths: list[Path]) -> tuple[list[Finding], int]:
     """Scan paths, returning findings and the number of files examined."""
     findings: list[Finding] = []
     checked = 0
     for path in paths:
-        if not path.is_file() or path.suffix not in TEXT_SUFFIXES:
+        if not path.is_file() or not is_scannable(path):
             continue
         checked += 1
         auth_key_rule = True

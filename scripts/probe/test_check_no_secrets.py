@@ -29,6 +29,9 @@ sys.path.insert(0, str(Path(__file__).parent))
 from check_no_secrets import scan  # noqa: E402
 
 REAL_KEY = "sk-live-9f8e7d6c5b4a3210fedc"
+# Assembled rather than written out, the same way MARKER is below, so this
+# file does not itself carry the literal the gate exists to catch.
+AUTH_HEADER = "Authorization" + ": " + "Bearer " + REAL_KEY
 
 
 class GateTestCase(unittest.TestCase):
@@ -328,6 +331,55 @@ class TestJsonIsCheckedByType(GateTestCase):
         self.assertClean(self._json("run.json", {
             "feeds": [{"query": {"apikey": "<redacted:auth_ref>"}, "auth_ref": "ch_key"}],
         }))
+
+
+class TestExtensionlessFilesAreScanned(GateTestCase):
+    """Suffix-based selection is not the same as covering every committed file.
+
+    Path.suffix is empty for a dotfile and for an extensionless script, so
+    `.gitignore`, `.gitattributes` and `.githooks/pre-commit` were tracked and
+    unscanned while CLAUDE.md claimed the check covered every committed file.
+    The last is a shell script -- a place a credential genuinely ends up.
+    """
+
+    def test_extensionless_shell_script_is_caught(self):
+        path = self.write(
+            "pre-commit",
+            "#!/bin/sh",
+            f"curl -H '{AUTH_HEADER}' https://x",
+        )
+        findings, checked = scan([path])
+        self.assertEqual(checked, 1, "extensionless file was skipped, not scanned")
+        self.assertTrue(findings, "credential in an extensionless script went unreported")
+
+    def test_dotfile_is_caught(self):
+        path = self.write(
+            ".gitattributes",
+            "* text=auto",
+            f"# {AUTH_HEADER}",
+        )
+        findings, checked = scan([path])
+        self.assertEqual(checked, 1)
+        self.assertTrue(findings)
+
+    def test_clean_extensionless_file_passes(self):
+        self.assertClean(self.write(".gitignore", ".venv/", "__pycache__/"))
+
+    def test_binary_without_a_suffix_is_skipped_not_crashed(self):
+        path = self.tmp / "blob"
+        path.write_bytes(b"\x00\x01\x02\xff\xfe")
+        findings, checked = scan([path])
+        self.assertEqual(checked, 0, "undecodable file should be skipped")
+        self.assertEqual(findings, [])
+
+    def test_suffixed_binary_is_still_excluded(self):
+        # The extensionless path must not become a way in for suffixed files
+        # that were deliberately out of scope.
+        path = self.tmp / "payload.pb"
+        path.write_text(AUTH_HEADER + "\n", encoding="utf-8")
+        findings, checked = scan([path])
+        self.assertEqual(checked, 0)
+        self.assertEqual(findings, [])
 
 
 if __name__ == "__main__":
