@@ -155,10 +155,40 @@ identical reason. The cost of ungating is that source files come into scope, whe
 auth-shaped name is routinely bound to an expression; `is_an_expression()` exempts
 those structurally, on the ground that a credential is a single opaque token.
 
-**Known and accepted gap in that exemption:** a literal split across an operator,
-`api_key = "sk-" + "live-real"`, reads as an expression and is exempt. That is a
-deliberate bypass rather than an accidental commit, and this gate's threat model is
-the accident.
+#### That exemption was itself a bypass, and is narrowed — 2026-08-29, review 6's F1
+
+**The predicate exempted any value containing one of `()[]{}+,`.** It mixed characters
+a credential CANNOT contain with characters it CAN: `+` is in the standard base64
+alphabet, so roughly half of all base64-shaped secrets carried their own exemption with
+them. AWS's own published example secret key circulates in a `/` variant and a `+`
+variant, and the gate caught the first and waved the second through.
+
+Three tests came within one character of finding this and all three missed on fixture
+choice — the base64 case used a value with no `+`, the AWS fixture used the `/` variant,
+and the planted key is `sk-live-...`. Fixture choice was doing the work the test was
+supposed to do.
+
+Narrowed to two disjuncts, each requiring syntax in a position a token cannot occupy:
+bracket structure, decided by a left-to-right stack scan rather than by character
+presence, and a `+` flanked by whitespace on both sides. `,` is dropped entirely. The
+generalisation is in [ADR 0004](decisions/0004-probe-methodology.md) section 13: **an
+exemption predicate must be defined over the complement of the protected value's
+alphabet.**
+
+**Two known and accepted gaps remain in it. Both are now pinned as fixtures marked
+*intentional exemption*, not left to this file alone** — an accepted gap with a test is
+a decision; one recorded only in prose is something the next person closes or widens
+without knowing it was deliberate.
+
+- **A literal split across an operator.** `api_key = "sk-" + "live-real"` reads as an
+  expression and is exempt.
+- **A credential carrying a nested bracket pair.** `sk-live-abc(def)` is exempt.
+  Accepted on the ground that no credential format this project handles — base64,
+  base64url, hex, JWT — admits a bracket at all, so it is not a shape a pasted secret
+  arrives in. Weaker than the alphabet argument for `+`, and recorded at that strength.
+
+Both are deliberate bypasses rather than accidental commits, and this gate's threat
+model is the accident.
 
 **And the reason it stayed invisible:** `TestEveryTrackedFileIsInScope` asserts a
 tracked file is *scanned*. It says nothing about which rules then run on it, so it
