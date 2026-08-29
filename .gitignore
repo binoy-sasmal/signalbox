@@ -19,3 +19,31 @@ __pycache__/
 # split into a tracked file deliberately.
 .claude/settings.json
 .claude/settings.local.json
+
+# Credential-shaped paths that turn up in a project directory by accident.
+#
+# The backstop, not the control. Secrets are SOPS + age; nothing here should
+# ever exist in the working tree in the first place. This section is for the
+# mistake that has already happened once: on 2026-08-29 an AWS `credentials`
+# file was created at `.aws/credentials` inside this repo rather than in
+# `~/.aws`. It was caught by inspection before any commit -- not by a gate.
+#
+# Read `docs/limits.md` before trusting this. The structural check would not
+# have stopped that commit: it walks tracked files, so an untracked credential
+# is invisible to it, and its key=value rule is gated on file suffix, so an
+# extensionless `credentials` file is scanned and then exempted from the one
+# rule that would have fired. An ignore rule is what actually stands between
+# `git add -A` and a pushed key.
+.aws/
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.ppk
+id_rsa
+id_ecdsa
+id_ed25519
+*credentials*.csv
