@@ -234,6 +234,24 @@ assertion over every committed file and runs in CI as well as pre-commit, with a
 suite ahead of it — a gate that cannot fire and a gate with nothing to fire on look identical from
 outside.
 
+**Amended 2026-08-29.** "Over every committed file" was true of the tree and not of the code. The
+file selector scanned a suffix allow-list plus extensionless files, so any tracked text file under
+an unlisted suffix — `policy.rego`, `values.tpl`, `app.conf` — was silently out of scope, and the
+adversarial suite could not see it: every case there builds its own fixture, so none of them can
+fail when a *newly tracked* file leaves the scan set. The claim held by accident of which suffixes
+happened to be present.
+
+Closed by asserting the claim itself: a test over `git ls-files` requires every tracked file to be
+scannable, and `main()` now prints the skipped count beside the scanned one. The `.rego` case is
+not hypothetical — Conftest is a settled decision, so Stage 3 adds policy files under exactly such
+a suffix.
+
+*Recorded because of the shape, not the bug.* This is rubric item 1 — an exemption satisfied by an
+input that does not satisfy its intent — for the fourth or fifth time in this repo. The pattern to
+watch for is a value-parsing exemption, not a logic error: the numeric exemption, the placeholder
+substring match, the angle-bracket value class, and now the suffix allow-list all failed the same
+way. When a check exempts something, the question is what else satisfies the exemption.
+
 ## Consequences
 
 - `header_timestamp_trust` and the dedup key both become tenant schema facts derived from measured

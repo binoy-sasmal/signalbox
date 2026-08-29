@@ -420,7 +420,13 @@ def main(argv: list[str]) -> int:
         )
         return 1
 
-    print(f"Structural credential check passed ({checked} file(s)).")
+    # Both numbers, because the failure this gate had was coverage shrinking
+    # rather than a rule breaking. A pass that reports only what it scanned
+    # looks identical whether the scan set is whole or has quietly lost a file.
+    print(
+        f"Structural credential check passed "
+        f"({checked} file(s) scanned, {len(paths) - checked} skipped)."
+    )
     return 0
 
 

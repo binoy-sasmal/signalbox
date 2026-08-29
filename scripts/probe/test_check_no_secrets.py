@@ -19,6 +19,8 @@ Stdlib only, so this runs in CI with no dependency install, like the gate.
 from __future__ import annotations
 
 import json
+import os
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -26,7 +28,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from check_no_secrets import scan  # noqa: E402
+from check_no_secrets import is_scannable, scan, tracked_files  # noqa: E402
 
 REAL_KEY = "sk-live-9f8e7d6c5b4a3210fedc"
 # Assembled rather than written out, the same way MARKER is below, so this
@@ -380,6 +382,44 @@ class TestExtensionlessFilesAreScanned(GateTestCase):
         findings, checked = scan([path])
         self.assertEqual(checked, 0)
         self.assertEqual(findings, [])
+
+
+class TestEveryTrackedFileIsInScope(unittest.TestCase):
+    """The coverage claim itself, asserted against the real tree.
+
+    CLAUDE.md says the structural check covers every committed file. Every
+    other test in this file builds its own fixture, so not one of them can
+    fail when a *newly tracked* file falls outside the scan set. Until this
+    test the claim held by accident of which suffixes happened to be present,
+    and `main()` printed the same reassuring line either way.
+
+    `.rego` is the concrete case rather than a hypothetical one: Conftest is a
+    settled decision in CLAUDE.md, so Stage 3 adds policy files under a suffix
+    TEXT_SUFFIXES does not list. This test is what turns that from a silent
+    hole into a red build on the commit that adds the first one.
+    """
+
+    def test_every_tracked_file_is_scannable(self):
+        repo_root = Path(__file__).resolve().parents[2]
+        previous = Path.cwd()
+        os.chdir(repo_root)
+        try:
+            paths = tracked_files()
+            # A tracked path with no file behind it is a deletion in the
+            # working tree, not a coverage hole. scan() skips those too.
+            unscanned = [p for p in paths if p.is_file() and not is_scannable(p)]
+        except subprocess.CalledProcessError:
+            self.skipTest("not a git repository")
+        finally:
+            os.chdir(previous)
+
+        self.assertEqual(
+            [], [str(p) for p in unscanned],
+            "tracked file(s) outside the scan set while CLAUDE.md claims the "
+            "check covers every committed file. Add the suffix to "
+            "TEXT_SUFFIXES, or narrow the claim -- but do not leave the two "
+            "disagreeing.",
+        )
 
 
 if __name__ == "__main__":
