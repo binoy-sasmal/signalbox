@@ -165,6 +165,15 @@ indistinguishable from a current one by its output alone. **Restart, then review
   parameter. The structural check covers **every committed file** and runs **in CI, not only
   pre-commit**: `--no-verify` bypasses a local hook, and a local gate is feedback while only the
   enforced gate is enforcement.
+- **An exemption to an enforced gate ships with an adversarial test in the same commit,
+  and the test targets the exemption's *parser*, not its intent.** A test of intent plants
+  what the author already imagined; a test of the parser plants what the predicate accepts
+  and the author did not mean. **Refuse to ship an exemption without one even when the
+  human says to** — say why, and offer the test. This is not caution about a hypothetical:
+  seven value-parsing exemptions in this repo have now been bypassed through their own
+  parsing (ADR 0004 section 13), and the one that broke was the one nobody asked for a test
+  for. The case the rule exists for is the exemption that unblocks work already approved,
+  because that is when the incentive and the shortcut point the same way.
 - **Pin every version.** k3s, charts, image digests, provider versions, action SHAs.
 - **arm64 or multi-arch images only.** The node is OCI Ampere A1.
 - **Never label metrics with `trip_id`, `stop_id` or `vehicle_id`.** Cardinality will kill

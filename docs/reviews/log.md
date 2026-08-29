@@ -54,6 +54,7 @@ diff, so anything persuasive in it arrives as framing rather than as evidence.
 | 2026-08-29 | *(self)* configuration probe — **no work reviewed** | **ESCALATE** | n/a — no diff adjudicated | Halt under 4.1. Scope was five verbatim questions about the running agent's own configuration. Established that the prompt, `CLAUDE.md` and `tools:` scoping were all current while the PreToolUse guard did not fire. Produced the removal in `0381df6` and ADR 0006. |
 | 2026-08-29 | *(self, in part)* `0419f6b..09278d2` | **ESCALATE** | 3 raised, 0 adjudicated | Halt under 4.2, 4.4 and the SKILL.md self-configuration touch, any one sufficient. Findings under items 1, 3, 4, 7, derived before the halt and not a verdict on the work. **First non-VOID review of any diff in this repo:** fresh session, clean tree, agent body at `HEAD`, and the agent's own symptom check found every section this range adds present in its prompt and the removed one absent. Escalated to the human unresolved; `0419f6b` itself remains outside the range and unreviewed. |
 | 2026-08-29 | *(self, in part)* `407dc67..f22366f` | **ESCALATE** | 4 raised, 0 adjudicated | Halt under 4.2, 4.4 and the SKILL.md self-configuration touch. Findings under items 1, 3, 6, 7, 8, 10. Range is `0419f6b~1..HEAD`, so it **includes `0419f6b`** and closes the gap the previous three rows named. All four findings actioned on the human's instruction: the scan-coverage claim made structural (`2b01a5b`), the status/log contradiction fixed and ruled against recurring (`084818c`), the `hooks:` claim narrowed to n=1 (`5b0205c`, `4dcd30e`), and the voided reviews' findings disposed of (`ca9f13f`) — F3–F7/F9–F10 recorded as unrecoverable rather than reconstructed. **Method on record:** the F1 fix was verified by making it fail, not by watching it pass — a tracked `policy/probe_tmp.rego` was added, the suite failed naming that path, and removing it returned 38 green. That is rubric item 3 applied to the fix itself: a test that only ever passes and a test that cannot fail look identical from outside. Do this for every gate added in response to a finding. |
+| 2026-08-29 | `f22366f..874e808` | **ESCALATE** | 4 raised + 2 observations, 0 adjudicated | Halt under 4.4 (two gate boundaries in one range -- Gate 1 declared passed and Gate 2 opened), 4.3 (two methodology changes to the enforced credential gate) and 4.1 (Gate 2 needs an OCI tenancy the human must create); any one sufficient. Findings under items 1, 3, 4, 6, 7, 9. **First review to read the deliberate gap** -- `f22366f..38a9542` is strictly inside this range. It read it and did not rule on it. All four findings and both observations actioned on the human's instruction; see *Findings in full*. F1 was fixed by the fail-first method this log records at row 5, and F2 is a process finding against the human as well as the builder. |
 
 ### Why reviews 1 and 2 are VOID
 
@@ -194,6 +195,29 @@ builder-reported. Nobody who did not write the change has read it.
 
 **Accepted by the human on that basis.** The review clock restarts at Gate 1.
 
+**Corrected 2026-08-29, after review 6.** The paragraph above said this range *will not
+be reviewed*. That is no longer what happened. Review 6's range, `f22366f..874e808`,
+**strictly contains** `f22366f..38a9542`, so a valid review has now read every commit in
+the gap. What it did not do is rule on them: it escalated at a gate boundary, and said so
+itself — *"escalating leaves the human-accepted gap still without an adjudication — this
+review read it, but did not rule on it."*
+
+The accurate statement is narrower than either "unreviewed" or "reviewed": **read, not
+adjudicated.** Kept as a deliberate-gap entry rather than promoted to a table row, because
+no `/review` was invoked on this range and the tally counts invocations.
+
+**What the gap cost, now measurable rather than predicted.** The entry above named
+`df63680`'s `is_an_expression()` as the reason this range is the kind of thing a review is
+for, and said plainly that nobody who had not written the change had read it. When somebody
+finally did, they found a bypass in it on the first pass: the exemption waved through
+roughly half of all base64-shaped secrets, and no test in the suite could fail on it. That
+is review 6's F1, fixed in `72506e4`.
+
+That does not make accepting the gap wrong. It was accepted with the contents and the risk
+stated first, which is the process working as designed. It does make the risk concrete, and
+it is recorded so the next such decision is taken against an observed cost rather than an
+abstract one.
+
 
 ## Findings in full
 
@@ -285,3 +309,134 @@ second observation from an independently configured session.
 *Note, not a finding:* whether `.claude/settings.json` is Claude Code's shared or local
 settings tier is itself a harness claim, UNVERIFIED. Nothing left git either way, since
 the file was never tracked.
+
+### Review 6 — `f22366f..874e808`, 2026-08-29, ESCALATE
+
+21 commits: the deliberate gap, Gate 1, and Gate 2's configuration. The self-configuration
+check resolved clean — the range touches `CLAUDE.md` and not `.claude/agents/` or
+`.claude/skills/`, and the reviewer's symptom check found both blocks this range adds to
+`CLAUDE.md` present verbatim in the copy it was serving.
+
+**F1 — the expression exemption waved through ordinary base64 credentials.** Rubric items
+1 and 6. `is_an_expression()` returned true for any value containing one of `()[]{}+,`,
+reached as a member of the `benign` disjunction, so a hit suppressed the finding. `+` is in
+the standard base64 alphabet, and roughly half of all 40-character base64 secrets contain
+at least one. Smallest input satisfying the exemption without satisfying its intent: an
+`aws_secret_access_key` assignment holding AWS's own published example secret key, which
+circulates in a `/` variant and a `+` variant — the gate caught the first and exempted the
+second. Nothing else covers it: `LITERAL_PATTERNS` needs the `Authorization`/`Bearer`
+context, `BARE_ASSIGNMENT` is scoped to header values, `QUERY_PARAM` needs `?` or `&`. The
+exemption shipped in `df63680` with no test of its own, and the three tests that came
+closest all missed by accident of fixture choice — the base64 case used a value with no
+`+`, the AWS fixture used the `/` variant, and the planted key is `sk-live-...`.
+*What would close it:* narrow the predicate to require operator syntax in a position a
+token cannot occupy, add tests planting `+`-bearing and `,`-bearing values, verify by
+making it fail.
+**Disposed:** `72506e4`. The predicate was stated to the human and approved before it was
+written. Two disjuncts survive — bracket structure decided by a left-to-right stack scan,
+and a `+` flanked by whitespace on both sides — and `,` is dropped entirely. Restoring the
+old predicate turns exactly 7 new assertions red; the `/`-variant control and the
+real-expression cases stay green either way, which is what makes them controls. All ten
+original false positives (not seven — see the correction at the end) stay exempt. ADR 0004
+section 13 carries the generalisation: **an exemption predicate must be defined over the
+complement of the protected value's alphabet, not over syntax that happens to look like
+code.**
+
+**F2 — two exemptions were added to the enforced gate in order to unblock the builder's own
+commits.** Rubric items 1 and 7. The gate-only `key` narrowing was added in `f1d0951`
+because the gate rejected the builder's own Terraform backend argument; `is_an_expression()`
+was added in `df63680` because ungating the rule raised findings against the repo. Both
+weaken an enforced credential gate and both make the builder's work pass. The reviewer did
+not dispute the reasoning in either case — it recorded the incentive shape, which is what
+item 7 exists for, and observed that the one of the two with no adversarial test is the one
+F1 found broken. Its counterfactual: had `is_an_expression` made the gate *stricter*, would
+it have shipped untested?
+
+**Disposed: accepted by the human, and recorded as a process finding against the human as
+well as the builder.** In their words: *"Both exemptions were added to make my approved work
+pass. The one I didn't demand a test for is the one that broke. Its counterfactual is the
+right question and the answer is no — a stricter change would not have shipped untested."*
+
+The approval is half the mechanism and belongs in the record. A gate exemption reaches this
+repo through two people: a builder who proposes it and a human who approves it. Logging it
+only against the builder would leave this file describing a control that does not exist,
+because nothing the builder does can compensate for an approval that never asks for the
+test.
+
+**The rule that follows, now in `CLAUDE.md` under Hard rules:** an exemption to an enforced
+gate ships with an adversarial test in the same commit, targeting the exemption's **parser**
+rather than its intent — and the builder refuses to ship one without that test even on the
+human's say-so. Instructed by the human in those terms.
+
+**F3 — Gate 1's pass rested entirely on console output pasted into `docs/status.md`.**
+Rubric items 3 and 9. `git grep` for the quoted line returned exactly one file;
+`git ls-files runs/` showed artefacts for Stage 0's four probe runs and nothing for Gate 1;
+`metrics.md` gained a Gate 2 section in this range and no Gate 1 section; and no CI job ran
+`terraform fmt -check`, `validate` or `init`, so every Gate 1 and Gate 2 result in the range
+was a local, unrepeatable run on one machine. The sole record of a gate sat in the one file
+this repo designates builder narrative that a reviewer must not treat as evidence.
+*What would close it:* the captured output committed as an artefact, to the standard Stage 0
+met.
+**Disposed:** `c04425e`. `runs/gate1/` holds program output redirected to disk, not
+transcription: a fresh clone, `init` against the real S3 backend with the provider
+downloaded from scratch, the `s3api` responses, and `fmt -check` plus `validate` for both
+configurations. `terraform-check.yml` runs the static checks on push and pull_request. Two
+limits are stated in the artefact rather than smoothed over — CI cannot reach the real
+backend without AWS credentials nobody has decided to add, and Gate 1's `plan` output is not
+reproducible at all now because Gate 2 added resources to that configuration.
+
+**One thing the re-observation found that the narrative had not said:** the state bucket is
+**empty**. `list-objects-v2` returns null, because the platform configuration has never been
+applied. `status.md` had said `plan` *"round-tripped the backend"*, which implies an object
+was written and read back; there was no object. What Gate 1 demonstrated is read access and
+correct backend wiring, and nothing about write access or `use_lockfile`. Narrowed in
+`status.md` in the same commit. Nothing in this repo has yet written an object to that
+bucket; the first `apply` will be the first write.
+
+**F4 — ADR 0008 was written in the same commit as the configuration it decides, and one of
+its decisions narrowed a CLAUDE.md hard rule.** Rubric item 4. `648f6c3` contains the ADR
+and all five `.tf` files together, so four decisions with their options and rejections all
+first appear in a document written alongside the code — CLAUDE.md rule 1 is "options,
+tradeoff, recommendation. Then wait." Review 4's F2 recurring, with the contrast visible
+inside the same range: `dcce455`'s commit message opens by attributing a reversal to the
+human, and ADR 0008 carried no such attribution. Sharpest instance: the ADR argued that
+resolving the boot image newest-first is not a violation of "pin every version" because the
+rule covers artefacts whose selection we control. A hard rule reinterpreted by the party it
+constrains, in prose written after the code — and a floating image makes Gate 2's *"destroy
+then apply produces a working SSH-able node. **Twice**"* two different experiments reported
+as one result.
+*What would close it:* the human ruling on the image-resolution reading, recorded the way
+`89565a2` recorded the ADR 0006 confirmation. Or pin the OCID.
+**Disposed:** `696959f`, **raised and decided by the human**, in their words: *"Pin the
+OCID, accept the periodic refresh, and record the refresh as a known maintenance task.
+Determinism matters more here than avoiding a stale pin, because the gate's verification
+depends on it."* The data source is gone and `var.node_image_ocid` holds the image. It has
+no default, because the value has never been observed — there is no tenancy, and committing
+an unobserved OCID would be inventing a number. Its validation was checked by making it
+reject. ADR 0008 decision 4 keeps the original reasoning visible beneath the reversal rather
+than overwriting it.
+
+**O1 (observation) — `.gitignore` described the credential gate as it was three commits
+earlier.** Its comment said the `key = value` rule "is gated on file suffix, so an
+extensionless `credentials` file is scanned and then exempted". True when `2b94fc3` wrote
+it, false from `df63680`. Two tracked artefacts disagreed about the gate's behaviour, with
+`limits.md` carrying the corrected account — the shape of review 5's F2, one file over.
+**Disposed:** `67f51ba`.
+
+**O2 (observation) — the state bucket name embeds the 12-digit AWS account ID**, in a repo
+`status.md` describes as public. Not a credential, and no gate would flag it; raised because
+ADR 0008 set this repo's bar at "not a credential, but personal" for the home IP, and this
+sits on the same side of that line.
+**Disposed:** it stays, on the human's ruling, with the distinction recorded explicitly in
+ADR 0008 decision 2 rather than left implicit. An account ID is public by AWS's own design —
+every bucket ARN and IAM policy document carries it — and a backend block cannot take a
+variable, so unlike the home IP it is also unavoidable. The rule the two cases share is
+written down so a third does not need re-arguing.
+
+**A correction the disposition of F1 produced.** `df63680`'s commit message recorded that
+ungating raised **7** findings against the repo, and review 6 repeated the number.
+Re-measured at `874e808`: disabling the exemption raises **10**. The three additions are
+`compute.tf`'s `ssh_authorized_keys` and two lines committed after `df63680`, one of them
+`is_an_expression`'s own docstring. Seven was correct when written; ten is the number now.
+Recorded because this file is the record, and a number that quietly stopped being true is
+exactly what it exists to catch.

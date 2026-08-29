@@ -76,50 +76,75 @@ What the reviewer's read-only property actually rests on — enforced tool scopi
 unenforced `Bash`, and restraint — is in [`limits.md`](limits.md), stated at its real size.
 The finding worth carrying: **prompt freshness is not evidence of hook wiring.**
 
-**Review position.** Five rows in [`reviews/log.md`](reviews/log.md). Two are VOID. The
-third is the probe, which adjudicated no work. The fourth and fifth — `0419f6b..09278d2`
-and `407dc67..f22366f`, both 2026-08-29 — are the **first valid reviews in this repo**,
-run from a restarted session whose configuration was current. Both returned ESCALATE.
+**Review position.** Six rows in [`reviews/log.md`](reviews/log.md). Two are VOID. The
+third is the probe, which adjudicated no work. The fourth, fifth and sixth —
+`0419f6b..09278d2`, `407dc67..f22366f` and `f22366f..874e808`, all 2026-08-29 — are the
+**valid reviews in this repo**, run from restarted sessions whose configuration was
+current. All three returned ESCALATE.
 
 So the claim that survives is the narrower one: **no valid review has adjudicated work in
-this repo.** Two have now read it and raised five distinct findings between them, all
-actioned. The `0419f6b` gap is closed — `407dc67..f22366f` is `0419f6b~1..HEAD` and
-includes that commit.
+this repo.** Three have now read it and raised eleven findings and two observations
+between them, all actioned. The `0419f6b` gap is closed — `407dc67..f22366f` is
+`0419f6b~1..HEAD` and includes that commit.
+
+**Every valid review has escalated, and none has returned ACCEPT or REJECT.** That is a
+fact about the review process as much as about the work, and it is stated here rather
+than left to be noticed.
 
 What the escalations put to the human, and what came back: the guard removal stands and
 Option 3 was confirmed as their decision; the voided reviews' F3–F7 and F9–F10 are
 recorded as **unrecoverable** rather than reconstructed, with the reasoning in the log.
 
-**One deliberate gap.** `f22366f..38a9542` — 15 commits, including a methodology change
-to the enforced credential gate — **will not be reviewed**, decided by the human at the
-Gate 1 boundary with the contents and the risk stated first. Recorded under *Deliberate
-gaps* in [`reviews/log.md`](reviews/log.md), not as a table row, because no review ran.
-The review clock restarts at Gate 1.
+**One deliberate gap, since read.** `f22366f..38a9542` — 15 commits, including a
+methodology change to the enforced credential gate — was accepted unreviewed by the human
+at the Gate 1 boundary, with the contents and the risk stated first. Review 6's range
+strictly contains it, so it has now been **read but not adjudicated**: that review
+escalated rather than ruling. Recorded under *Deliberate gaps* in
+[`reviews/log.md`](reviews/log.md), not as a table row, because no review was invoked on
+that range.
+
+**The risk it named came true, which is why the entry now records a cost.** The commit it
+singled out, `df63680`, is where review 6 found F1 — the credential gate's expression
+exemption waving through roughly half of all base64-shaped secrets, with no test in the
+suite able to fail on it. Accepting the gap was not wrong; the risk was stated first. It
+is now an observed cost rather than an abstract one.
 
 ## Next
 
 **Gate 2** (Terraform: OCI cloud floor), `docs/PLAN.md` section 7.
 **Configuration written and validated. NOT passed — blocked on an OCI account.**
 
-Observed so far, and it is all offline: `terraform init`, `terraform validate` and
-`terraform fmt -check` succeed for `infra/terraform/platform`. The gate's actual
-verification — *"destroy then apply produces a working SSH-able node. Twice. With no
-manual step"* — has not run and cannot until a tenancy exists. Decisions in
-[ADR 0008](decisions/0008-oci-cloud-floor.md).
+Observed so far: `terraform fmt -check` clean, `init` successful against the real
+S3 backend, `validate` successful, and `plan` failing at `open ~/.oci/config: The system
+cannot find the path specified` — the blocker reported by Terraform rather than asserted
+here. The static checks now also run in CI on every push
+([`terraform-check.yml`](../.github/workflows/terraform-check.yml)), so they are no longer
+a local claim. The gate's actual verification — *"destroy then apply produces a working
+SSH-able node. Twice. With no manual step"* — has not run and cannot until a tenancy
+exists. Decisions in [ADR 0008](decisions/0008-oci-cloud-floor.md).
 
 **Discharged early:** the Always Free allowance re-verification that `PLAN.md`
 section 3 requires at this gate. Unchanged on 2026-08-29 — [`metrics.md`](metrics.md).
 
-**Two values the operator must supply at apply time**, neither committed:
-`compartment_ocid` and `ssh_ingress_cidr`. The second has no default deliberately —
-it is a home IP, and this repo is public.
+**Three values the operator must supply at apply time**, none committed:
+`compartment_ocid`, `ssh_ingress_cidr` and `node_image_ocid`. The second has no default
+deliberately — it is a home IP, and this repo is public. The third has none because the
+value has never been observed: it is pinned rather than resolved (ADR 0008 decision 4,
+reversed after review 6's F4), and its default gets filled in at Gate 2 from the value
+actually applied. Committing an OCID nobody has seen would be inventing a number.
 
-**Review position for that boundary, stated now so it is not discovered later:**
-**no review has run over Gate 1's work.** The clock restarted at Gate 1 by the
-deliberate-gap decision above, and Gate 1 then closed without one. Its range is
-`38a9542..HEAD` and it includes a second methodology change to the enforced
-credential gate (`f1d0951`, the gate-only `key` exemption) on top of the one already
-inside the unreviewed gap. Two gate changes now sit unreviewed, not one.
+**Review position for that boundary.** Review 6 ran on 2026-08-29 over
+`f22366f..874e808` and returned **ESCALATE** — four findings and two observations, all
+now actioned. That range covers Gate 1's work and Gate 2's configuration, and closes the
+gap the previous version of this paragraph reported. Both methodology changes to the
+enforced credential gate (`df63680` and `f1d0951`) have now been read.
+
+**What is unreviewed is what came after it:** the six commits responding to review 6,
+`874e808..HEAD`, which include a third methodology change to that same gate — the
+narrowed expression predicate in `72506e4`. It ships with adversarial tests verified by
+making them fail, which is the standard the new hard rule in `CLAUDE.md` now requires, but
+nobody who did not write it has read it. That is the gap to state at the Gate 2
+boundary.
 
 Gate 2 re-verifies the OCI Always Free allowance before provisioning — `PLAN.md`
 section 3 marks that number as the one most likely to have moved.
