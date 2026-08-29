@@ -20,27 +20,10 @@ finding when none has run since the previous gate.
 each verdict. A builder could omit a REJECT, but the omission is visible in git
 history, which is more than opaque memory would offer.
 
-## Open limitation: the reviewer cannot be the sole reviewer of its own construction
-
-Rows marked *(self)* below reviewed the review machinery itself. That is the one
-subject where this agent has the conflict its own rubric item 7 exists to catch:
-the incentive runs one way, and a reviewer that finds its own construction sound
-has told you very little.
-
-It is not solved in this repo, and no attempt should be made to solve it here. A
-second reviewer would have the same blind spot for the same reason, and a rule
-forbidding self-review would only mean the machinery goes unreviewed. **The human
-gate-boundary review is what covers it** — see the review-position rule in
-CLAUDE.md.
-
-Recorded rather than mitigated, because a limitation written down is one an
-interviewer can be walked through, and a limitation quietly worked around is one
-that gets discovered.
-
-The evidence so far is encouraging but not conclusive: on its first run the agent
-raised eight findings against the four commits that built it, seven of which
-verified. That is evidence it does not simply approve itself. It is not evidence
-that it found everything.
+**A `*(self)*` row reviewed the review machinery itself.** That is a real
+limitation, recorded in [`../limits.md`](../limits.md) rather than here. This file
+carries rows, not argument: a reviewer is instructed to read it before it reads a
+diff, so anything persuasive in it arrives as framing rather than as evidence.
 
 ## Format
 
