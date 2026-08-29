@@ -63,7 +63,10 @@ confirmed from HashiCorp's documentation, but **concurrent lock behaviour has no
 been observed** — no two Terraform runs have contended for this state. The claim
 "state locking works" rests on documentation, not on evidence from this repo.
 
-**Stage 0 complete. Stage 1 in progress: Gate 1 of 9 passed.**
+**Stage 0 complete. Stage 1 in progress**, and from 2026-08-30 no longer strictly in
+order: Gate 1 passed, Gate 2 written but blocked, Gate 5 in progress, Gates 3, 4 and 6–9
+not started. The reasoning for taking Gate 5 out of order is under *Reordering*, below.
+A single "gate N of 9" would assert a sequence that no longer holds.
 
 ## Review machinery — closed 2026-08-29
 
@@ -136,6 +139,60 @@ gate.** A new change to it would be.
 deadline stands and the decision is the human's on that date. Until then it is a recorded
 pending decision; a range that merely contains the blocker is not thereby escalatable. The
 blocker itself is real and unchanged — see *Next*, below.
+
+## Reordering — Gate 5 taken while Gate 2 stays blocked, 2026-08-30
+
+**Gate 2 is blocked on a tenancy that does not exist and cannot be unblocked by working
+harder at it.** Rather than idle until 2026-09-05, Gate 5 (ingest service) is taken now.
+This is recorded as a decision, before any of it is built, because the alternative is that
+a reader later infers a violation of `PLAN.md` section 2 rule 2 — *one gate at a time* —
+from the commit order alone.
+
+**The distinction being claimed, stated so it can be disagreed with.**
+
+- **Scaffolding ahead** is speculative work on something not yet reached: building Stage 2's
+  tenant module while one tenant exists, writing the Helm chart before the service, adding a
+  provider abstraction for a second cloud nobody has chosen. Its defect is that the
+  requirements are not known yet, so the work encodes guesses that later have to be unpicked.
+- **Reordering** is doing work whose requirements are already fixed, in a different order,
+  because the work in front of it is blocked on someone else. Nothing is guessed; only the
+  sequence changes.
+
+Gate 5 is the second, and the test is that **every input it needs already exists and none of
+them is an output of Gates 2, 3 or 4**:
+
+| Gate 5 needs | Where it comes from | Blocked by OCI? |
+|---|---|---|
+| A feed with measured cadence, parse rate and conditional-request behaviour | Stage 0, run 2 and 2b | no |
+| Python and a local Postgres in Docker | this machine | no |
+| Its verification — one hour against the live feed, locally | `PLAN.md` section 7, Gate 5 | no |
+
+Its verification is *"run locally against the live feed for one hour"*. There is no cluster
+in that sentence, and no step of it consults anything Gate 2 produces.
+
+**What this does not do, and the honest cost.**
+
+- **Gate 2 is not passed, not skipped and not abandoned.** It is blocked, its configuration
+  is written and statically checked, and its verification remains unrun. Nothing here changes
+  that entry.
+- **Gates 6–9 stay blocked behind Gates 2–4** and are not reordered. Gate 6 is the Helm chart
+  deployed by ArgoCD; it needs a cluster and it waits. **If Gate 5 work starts producing chart
+  templates or cluster manifests, that is scaffolding ahead and this entry is being abused.**
+  That is the line, written down in advance rather than judged afterwards.
+- **"Gate N of 9" stops describing the position.** Progress through Stage 1 is now a set, not
+  a count: Gate 1 passed, Gate 2 blocked, Gate 5 in progress, Gates 3, 4, 6–9 not started.
+  This file says so rather than reporting a number that implies an order that no longer holds.
+- **Accepted risk.** A service designed with no cluster in front of it may need rework when
+  Gate 6 puts one there — configuration surface, logging shape, readiness. The mitigation is
+  the bullet above: Gate 5 stays free of Kubernetes assumptions, so what Gate 6 adds is
+  packaging rather than redesign. If that turns out wrong, the cost lands at Gate 6 and gets
+  recorded there.
+
+**The OCI decision deadline is unchanged.** 2026-09-05, the human's, between continuing to
+wait on the support ticket and falling back to Hetzner CX32 — exactly as recorded under
+*Settled or scheduled* and *Next*. **Reordering is not a substitute for resolving it**, and
+having other work in flight on that date is not a reason to let it slide. It removes the
+idleness, not the blocker.
 
 ## Next
 
@@ -221,4 +278,4 @@ fail** (ADR 0004 section 8, five worked examples). This applies directly to Gate
 an SLI over a window with too few samples reports a reassuring number rather than "no data",
 which is the same failure in a far more expensive place.
 
-**Last updated:** 2026-08-29 (UTC)
+**Last updated:** 2026-08-30 (UTC)
