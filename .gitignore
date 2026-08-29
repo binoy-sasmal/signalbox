@@ -47,3 +47,20 @@ id_rsa
 id_ecdsa
 id_ed25519
 *credentials*.csv
+
+# Terraform.
+#
+# `.terraform.lock.hcl` is deliberately NOT ignored. It is the provider pin --
+# exact versions plus hashes -- and CLAUDE.md requires every version pinned, so
+# it is committed and reviewed like any other lock file.
+#
+# Bootstrap state is local by construction (ADR 0007) and must never be
+# committed: it is the one state file with nowhere else to live, and a tracked
+# .tfstate would also fail the credential gate's coverage test, since .tfstate
+# is not a scannable suffix. That failure is correct -- it forces the decision
+# rather than letting state drift into git.
+.terraform/
+*.tfstate
+*.tfstate.*
+crash.log
+crash.*.log

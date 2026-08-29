@@ -1,0 +1,55 @@
+# Signalbox
+
+A multi-tenant control plane for public realtime transit feeds, where onboarding a
+new data source is one merged pull request.
+
+Each upstream feed is an isolated tenant. Onboarding provisions an isolated ingest
+pipeline, storage, quotas, dashboards and alerts with no human touching a cluster.
+
+**Read [`docs/PLAN.md`](docs/PLAN.md) first** — it is the authoritative plan.
+[`docs/status.md`](docs/status.md) says where the work actually is, and
+[`docs/limits.md`](docs/limits.md) says what this is not. That last one is not
+boilerplate; read it before believing anything above.
+
+## What exists right now
+
+Stage 0 (feed probe) is complete and Stage 1 has just started. There is no cluster,
+no ingest service and no running system. See [`docs/status.md`](docs/status.md).
+
+## Prerequisites
+
+| Tool | Version | Why pinned |
+|---|---|---|
+| Terraform | `1.16.0` | Exact pin in `required_version`. `use_lockfile` needs ≥ 1.10. |
+| AWS CLI | v2 | Credentials only; Terraform does not shell out to it. |
+
+## AWS credentials
+
+Terraform reads the standard AWS credential chain. Nothing in this repo names a
+profile, so that a fresh clone works the same way locally and in CI.
+
+```sh
+export AWS_PROFILE=signalbox      # PowerShell: $env:AWS_PROFILE = "signalbox"
+aws sts get-caller-identity       # expect .../user/signalbox-terraform
+```
+
+If this returns `NoCredentials`, or an ARN ending in `:root`, stop and fix it
+before running Terraform.
+
+## Terraform state
+
+Two configurations, and the split is deliberate — see
+[ADR 0007](docs/decisions/0007-terraform-state-backend.md).
+
+```
+infra/terraform/bootstrap/   # creates the S3 state bucket. Local state.
+infra/terraform/platform/    # OCI cloud floor. Uses that bucket as its backend.
+```
+
+`bootstrap` runs once and creates the bucket every other configuration stores state
+in. It cannot store its own state there, so its state is local and gitignored.
+
+```sh
+cd infra/terraform/bootstrap && terraform init && terraform apply
+cd ../platform             && terraform init
+```
