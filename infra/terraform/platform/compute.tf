@@ -2,20 +2,6 @@ data "oci_identity_availability_domains" "ads" {
   compartment_id = var.compartment_ocid
 }
 
-# Resolved by data source rather than pinned as an OCID. An image OCID is
-# region-specific and is replaced when Canonical publishes a new build, so a
-# hardcoded one rots into an apply failure. CLAUDE.md's "pin every version" is
-# about artefacts whose selection we control; here the selection rule is the
-# stable thing and the OCID is not.
-data "oci_core_images" "ubuntu_arm" {
-  compartment_id           = var.compartment_ocid
-  operating_system         = "Canonical Ubuntu"
-  operating_system_version = "24.04"
-  shape                    = "VM.Standard.A1.Flex"
-  sort_by                  = "TIMECREATED"
-  sort_order               = "DESC"
-}
-
 # 2 OCPU / 12 GB is not a choice, it is the entire Always Free allowance:
 # 1,500 OCPU-hours / 730 = 2.05 and 9,000 GB-hours / 730 = 12.3. Anything
 # larger leaves the free tier; anything smaller wastes it. Arithmetic in
@@ -33,7 +19,7 @@ resource "oci_core_instance" "node" {
 
   source_details {
     source_type             = "image"
-    source_id               = data.oci_core_images.ubuntu_arm.images[0].id
+    source_id               = var.node_image_ocid
     boot_volume_size_in_gbs = 50
   }
 

@@ -57,6 +57,30 @@ would keep the drill clean. Rejected because "the node holds no data yet" is an
 argument that expires at Gate 5, and a rule nobody revisits after it stops being true
 is how exposure becomes permanent.
 
+### Where else that line falls, recorded rather than left implicit
+
+Review 6 raised as an observation (O2) that `signalbox-tfstate-215573083789` - the
+state bucket name in `main.tf` and in the bootstrap configuration - embeds the
+12-digit AWS account ID, in a repository this project intends to be public. It sits
+on the same side of the "not a credential, but personal" line this decision drew for
+the home IP, so the distinction is written down rather than left to inference.
+
+**It stays.** Two things separate it from the home IP:
+
+- **It is not secret in the first place.** An account ID appears in every bucket ARN,
+  every IAM policy document and every error message AWS returns to a caller. It is an
+  identifier AWS treats as public; access is controlled by credentials and policy,
+  not by its obscurity. A home IP has no such story - nothing else publishes it.
+- **It cannot be supplied at apply time.** A backend block cannot refer to variables
+  (ADR 0007 records the same constraint forcing `profile` to be a literal), so the
+  bucket name has to be a literal in the configuration. `ssh_ingress_cidr` had a
+  choice; this does not.
+
+What it does leak is that this account exists, and its rough age. That is accepted.
+The rule the two cases share, stated so a third does not need re-arguing: **a value
+that is personal and avoidable stays out; a value that is public by the provider's
+own design and structurally unavoidable goes in, with the reasoning recorded.**
+
 **Egress is open**, which is not the same kind of decision. The node pulls k3s,
 container images and upstream transit feeds; all are CDN-fronted with moving
 addresses, so a CIDR allow-list would be a list of lies that breaks silently. This is
@@ -74,27 +98,68 @@ wastes it. Re-verified against Oracle on 2026-08-29 - [`../metrics.md`](../metri
 the five allowed backups. **The data volume is separate from boot on purpose:** it is
 what makes Gate 9 a rebuild drill rather than a data-loss event.
 
-## Decision 4 - the image is resolved, not pinned
+## Decision 4 - the image is pinned, not resolved
 
-`data "oci_core_images"` filtered to Canonical Ubuntu 24.04 on the A1.Flex shape,
-newest first - not a hardcoded image OCID.
+**Reversed 2026-08-29, by the human, after review 6 raised it as F4.** The original
+decision is kept below so the reversal is legible rather than looking like the
+configuration was always this way.
 
-This looks like a violation of CLAUDE.md's "pin every version" and is not. An image
-OCID is region-specific and is *replaced* when Canonical publishes a new build, so
-pinning one produces an apply that fails on a date nobody chose. The pinning rule is
-about artefacts whose selection we control - charts, provider versions, action SHAs,
-container digests. Here the selection rule is the stable thing.
+`var.node_image_ocid` holds the image OCID and the instance uses it directly. There
+is no `data "oci_core_images"` block.
 
-**Ubuntu rather than Oracle Linux** is an assumption, not a measured decision. Oracle
-Linux is OCI-native; Ubuntu is far better documented for k3s and Ansible, which is
-Gate 3's entire content. One filter change reverses it, and it should be reversed if
-Gate 3 fights the distribution rather than the work.
+**Originally decided the other way**, and written in the same commit as the code -
+which is the process defect F4 named separately, and is why this section is being
+revised by the party the rule constrains rather than confirmed by them. The argument
+was: an image OCID is region-specific and is *replaced* when Canonical publishes a
+new build, so pinning one produces an apply that fails on a date nobody chose.
+CLAUDE.md's "pin every version" was read as covering artefacts whose selection we
+control - charts, provider versions, action SHAs, container digests - with the
+selection rule as the stable thing here.
+
+**Why that reading loses.** It collides with Gate 2's own criterion: *"destroy then
+apply produces a working SSH-able node. Twice."* A floating image means the two
+applies are not guaranteed to resolve the same image, so the drill would not be
+repeating itself - it would be running two different experiments and reporting one
+result. The same applies to Gate 9's rebuild drill, where the whole claim is that
+the rebuilt node is the node that was destroyed.
+
+**Determinism outranks avoiding a stale pin here, because the gate's verification
+depends on it.** A stale pin fails loudly on a date nobody chose; a floating image
+succeeds quietly while making the verification mean less than it appears to. The
+first failure mode is the one this repo consistently prefers.
+
+**Accepted cost: the refresh is a known maintenance task.** Canonical publishes new
+24.04 builds and Oracle eventually retires old ones, so the pin goes stale on their
+schedule. The refresh command sits next to the variable in `variables.tf`, not only
+here.
+
+**No default, and that is not the same as unpinned.** The value has never been
+observed: there is no tenancy, and an image OCID is region-specific, so committing
+one now would be inventing a number rather than measuring it - the thing this repo's
+own rules forbid. The variable has no default and a validation that rejects anything
+not shaped like an image OCID, so a missing or wrong value is a loud failure at plan
+time rather than a silent resolve. **The default gets filled in at Gate 2, from the
+value actually applied.** An image OCID is an identifier, not a secret; it belongs in
+git as soon as it is real.
+
+**Ubuntu rather than Oracle Linux** is unchanged and is still an assumption, not a
+measured decision. Oracle Linux is OCI-native; Ubuntu is far better documented for
+k3s and Ansible, which is Gate 3's entire content. It should be reversed if Gate 3
+fights the distribution rather than the work - which now means changing the OCID
+rather than a filter.
 
 ## Consequences
 
-- **Gate 2 is written but not passed.** There is no OCI account, so `plan`, `apply`
-  and the SSH verification have not run. `terraform init`, `validate` and `fmt` all
-  succeed offline, and that is the whole of what has been observed.
+- **Gate 2 is written but not passed.** There is no OCI account, so `apply` and the
+  SSH verification have not run. What has been observed, 2026-08-29, and re-observed
+  after the Decision 4 reversal: `terraform fmt -check` clean, `init` successful
+  against the real S3 backend, `validate` successful, and `plan` failing at
+  `open ~/.oci/config: The system cannot find the path specified` - which is the
+  blocker itself, reported by Terraform rather than asserted here.
+- **The image OCID validation was checked adversarially, not assumed.** `plan` with
+  `node_image_ocid=ubuntu-24-04-aarch64` returns *Invalid value for variable* against
+  `variables.tf` line 51. A validation nobody has seen reject anything is
+  indistinguishable from one that cannot.
 - Two claims in PLAN.md section 3 stay unverified and can only be settled by
   provisioning: **Frankfurt A1 capacity**, and **idle reclamation** below 10% CPU and
   network over 7 days. `var.availability_domain_index` exists because of the first -
