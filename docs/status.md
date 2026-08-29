@@ -37,15 +37,19 @@ What the reviewer's read-only property actually rests on — enforced tool scopi
 unenforced `Bash`, and restraint — is in [`limits.md`](limits.md), stated at its real size.
 The finding worth carrying: **prompt freshness is not evidence of hook wiring.**
 
-**Review position.** Four rows in [`reviews/log.md`](reviews/log.md). Two are VOID. The
-third is the probe, which adjudicated no work. The fourth, `0419f6b..09278d2` on
-2026-08-29, is the **first valid review in this repo** — run from a restarted session
-whose configuration was current — and it returned ESCALATE, halting before it ruled on
-the substance.
+**Review position.** Five rows in [`reviews/log.md`](reviews/log.md). Two are VOID. The
+third is the probe, which adjudicated no work. The fourth and fifth — `0419f6b..09278d2`
+and `407dc67..f22366f`, both 2026-08-29 — are the **first valid reviews in this repo**,
+run from a restarted session whose configuration was current. Both returned ESCALATE.
 
 So the claim that survives is the narrower one: **no valid review has adjudicated work in
-this repo.** One has now read it and raised findings. `0419f6b` itself remains outside
-every range reviewed so far.
+this repo.** Two have now read it and raised five distinct findings between them, all
+actioned. The `0419f6b` gap is closed — `407dc67..f22366f` is `0419f6b~1..HEAD` and
+includes that commit.
+
+What the escalations put to the human, and what came back: the guard removal stands and
+Option 3 was confirmed as their decision; the voided reviews' F3–F7 and F9–F10 are
+recorded as **unrecoverable** rather than reconstructed, with the reasoning in the log.
 
 ## Next
 
