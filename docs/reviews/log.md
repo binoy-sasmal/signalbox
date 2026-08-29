@@ -158,3 +158,94 @@ and now larger: `0419f6b` has never been validly reviewed, and nothing from
 That last part cannot be fixed from here. The removal changes `.claude/agents/`, so
 a review of it in the session that made it would be reviewing a configuration that
 no longer exists, and would be VOID on arrival. It needs a restart first.
+
+## Findings in full
+
+Per the rule in `CLAUDE.md`. Reviews 1 and 2 predate it and their findings are gone;
+these are transcribed from the reviewer's own output, not from a summary of it.
+
+### Review 4 — `0419f6b..09278d2`, 2026-08-29, ESCALATE
+
+**F1 — voiding two reviews discharges eight findings that no longer exist anywhere.**
+Rubric item 7. In `log.md`, the row for review 2 asserted "F3-F10 stand on repo
+artefacts and are unfixed" while the prose repeated "F3 to F7 and F9 to F10 remain
+untouched". The repo therefore asserted eight open, artefact-grounded findings and
+recorded nowhere what any of them were; their content lived in a transcript that no
+longer exists. Voiding was the correct call and the reasoning was sound, but the side
+effect is that eight findings against the builder's own work became permanently
+unenumerable in the same commit that declared them valid and outstanding — a change
+that would not have been made the same way had the findings been in the builder's
+favour. *What would close it:* write them out, or state plainly that they are
+unrecoverable; the middle position is closeable by nobody.
+**Disposed:** `ca9f13f`, and the rule in `0550456`. Unrecoverable, stated as such.
+
+**F2 — ADR 0006 asserts the human made the decision; the artefact order shows
+act-then-record.** Rubric item 4. The removal is `0381df6`; the ADR is `471af6a`, one
+commit later, so the three options, their costs and the rejections of Options 1 and 2
+all first appear in a document written after the guard was already deleted. CLAUDE.md
+rule 1 is "options, tradeoff, recommendation. Then wait." A reviewer restricted to
+artefacts cannot distinguish a decision the human made from one narrated as theirs
+afterwards. The reviewer explicitly declined to call the claim false or established.
+*What would close it:* the options presented before the removal commit, or the human
+confirming directly.
+**Disposed:** `89565a2`. The human confirmed Option 3 was their decision, taken before
+the removal. Claim stands; the commit ordering was the defect.
+
+**F3 — `is_scannable` keeps a bypassable suffix exemption under a claim of total
+coverage.** Rubric items 1 and 3. `check_no_secrets.py` returned `False` for any suffix
+outside `TEXT_SUFFIXES`, while CLAUDE.md claims the structural check "covers every
+committed file". Smallest input satisfying the exemption without satisfying its intent:
+any tracked UTF-8 text file with an unlisted suffix — `creds.conf`, `backup.xml`,
+`local.properties`, `terraform.tfstate`. Coverage was 49/49 only by accident of the
+current file set. The structural half: no test in the suite could ever fail when a newly
+tracked file drops out of scope, because every case builds its own fixture. *What would
+close it:* a test walking `git ls-files` asserting every tracked path is `is_scannable`.
+**Disposed:** `2b01a5b`.
+
+*Observations, not findings:* `.claude/settings.json` is gitignored, so ADR 0006's
+Option 2 would now land in a file that does not rebuild from git — recorded in
+`6737cec`. And the range was exclusive of `0419f6b`, leaving that commit unreviewed —
+closed by review 5.
+
+### Review 5 — `407dc67..f22366f`, 2026-08-29, ESCALATE
+
+**F1 — "covers every committed file" is true of today's tree, not by construction.**
+Rubric items 1, 3 and 6. Independent restatement of review 4's F3, with the live case
+named: `.rego` is absent from `TEXT_SUFFIXES` and CLAUDE.md commits this repo to
+Conftest, so Stage 3 adds policy files under exactly such a suffix. Also: `main()`
+printed only the scanned count and never a skipped count, so coverage could shrink in
+CI with no output changing. *What would close it:* assert `is_scannable()` over
+`tracked_files()`, so the first unscannable tracked file is a red build.
+**Disposed:** `2b01a5b`.
+
+**F2 — `status.md` contradicts `reviews/log.md` at HEAD.** Rubric item 10. `status.md`
+said "Three rows... **No valid review has run against any work in this repo**" while
+`f22366f` had added a fourth row labelled the first non-VOID review of any diff here.
+`status.md` was written in `40fceef` and never revisited. Both are tracked artefacts
+asserting incompatible facts at the same commit; the narrower reading ("no valid review
+has *adjudicated* work") survives, the sentence as written does not. *What would close
+it:* update the review position in the same commit that adds a log row.
+**Disposed:** `084818c`, which also added that rule to CLAUDE.md.
+
+**F3 — the range deletes an enforced CI gate.** Rubric item 7. `review-guard.yml` ran on
+`push:` and `pull_request:` at `407dc67` and does not exist at `f22366f`, and `0c9649b`
+retired reviews 1 and 2's findings as "untouched". The reviewer did not dispute the
+removal's reasoning; it recorded that both moves reduce outstanding obligations on the
+builder, which is the incentive shape item 7 exists for, and that it is the human's call.
+**Disposed:** guard deletion stands, affirmed by the human. The retirement was disposed
+of properly in `ca9f13f`.
+
+**F4 — "the `hooks:` key does nothing" is a harness claim generalised from n=1.**
+Rubric items 8 and 10. ADR 0006 asserted "**The frontmatter is read. The `hooks:` key
+inside it does nothing**" and `limits.md` "The frontmatter PreToolUse hook does not apply
+in practice." What the artefacts support is narrower: in one probe session, two commands
+the committed guard denies by construction executed with no denial. The step from that to
+a general property of Claude Code is UNVERIFIED — the reviewer has no web access and the
+repo settles nothing. Raised because ADR 0006 is otherwise scrupulous about that line and
+these two sentences crossed it. *What would settle it:* the hooks documentation, or a
+second observation from an independently configured session.
+**Disposed:** `5b0205c`, and a third copy in `status.md` found and narrowed in `4dcd30e`.
+
+*Note, not a finding:* whether `.claude/settings.json` is Claude Code's shared or local
+settings tier is itself a harness claim, UNVERIFIED. Nothing left git either way, since
+the file was never tracked.
