@@ -17,6 +17,13 @@ So a PreToolUse hook was built and wired from the agent's frontmatter
 (`ee62582`), hardened to fail closed (`1212d8d`), and given a wiring test and a CI
 job (`433b34d`). 73 tests, three days.
 
+*Count, precisely, because the removal commit `0381df6` states it loosely.* 62 of
+the 73 are evaluator tests over `evaluate()`; the other 11 are the wiring tests.
+`0381df6`'s message says "the 73 tests over them, the wiring test, and the CI job",
+which counts the wiring tests twice, and says "the 73 tests exercise `evaluate()`",
+which is true of 62 of them. Corrected here rather than by rewriting pushed
+history.
+
 ## The observation
 
 On 2026-08-29, from a freshly restarted interactive session with workspace trust
