@@ -30,8 +30,8 @@ on measured resource grounds**. Findings that outlive the probe:
 
 Built between Stage 0 and Stage 1, and now settled. The `gate-reviewer` agent and the
 `/review` skill stay. The PreToolUse read-only guard is **removed**: a configuration probe
-established it never fired, and a check that does not run is not enforcement
-([ADR 0006](decisions/0006-reviewer-read-only-enforcement.md)).
+found it not firing in the one session tested, and a check that does not run is not
+enforcement ([ADR 0006](decisions/0006-reviewer-read-only-enforcement.md)).
 
 What the reviewer's read-only property actually rests on — enforced tool scoping,
 unenforced `Bash`, and restraint — is in [`limits.md`](limits.md), stated at its real size.
