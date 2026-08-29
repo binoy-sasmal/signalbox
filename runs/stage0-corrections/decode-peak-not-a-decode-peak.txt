@@ -1,0 +1,244 @@
+### environment ###
+captured_at: 2026-08-29T22:34:04Z
+commit: c40e20f715e176a9c2732fc1667981a59cd3749d
+
+### what this is ###
+runs/run2/analysis.json records a per-feed field
+'single_message_decode_peak_bytes', and PLAN section 7 names it as the
+input to Gate 5's memory sizing: single-message decode peak x queue
+depth x safety factor.
+
+It reports 2.14 GB for VBB, whose bodies decompress to 9.0 MB. This file
+establishes what it measured instead, so the field is recorded as not
+usable with a reason rather than deleted or left standing.
+
+The first attempt at this control was wrong: it assumed the figure was
+retained decoded FeedMessages, and the control showed tracemalloc cannot
+see those at all. Section 3 is what corrected it. Kept in this shape
+because the disproof is the load-bearing step.
+
+===============================================================
+
+### environment ###
+python:   3.12.5 (tags/v3.12.5:ff3bc82, Aug  6 2024, 20:45:27) [MSC v.1940 64 bit (AMD64)]
+protobuf: upb implementation
+
+### 1. What is recorded in runs/run2/analysis.json ###
+
+feed                     single_message_decode_peak   process_peak_rss
+hsl_tripupdates                         331,021,092      2,052,030,464
+hsl_vehiclepositions                    639,931,120      2,095,525,888
+ovapi_tripupdates                       589,118,703      2,790,371,328
+vbb                                   2,143,237,596      5,548,781,568
+
+VBB is recorded at 2.14 GB for a 'single message'. Its bodies decompress
+to a p50 of 9,006,580 bytes. The figure is 230x the
+thing it claims to measure, which is what prompted this check.
+
+### 2. The measurement, as written (analyse.py:631-660) ###
+
+    tracemalloc.start()
+    for obs in observations:
+        if digest not in cache:
+            raw = blob.read_bytes()
+            tracemalloc.reset_peak()
+            cache[digest] = classify_payload(raw)
+            _, peak = tracemalloc.get_traced_memory()
+            single_decode_peak = max(single_decode_peak, peak)
+        ...
+        decoded[obs["seq"]] = Snapshot(obs, message)   # retained, grows every iteration
+
+Two properties of tracemalloc decide what this returns:
+  (a) get_traced_memory() returns process-wide traced allocation, not a
+      delta across the call.
+  (b) reset_peak() sets the peak to the CURRENT total, which already
+      includes everything retained by earlier iterations.
+
+### 3. Control: one decode in isolation, measured two ways ###
+
+tracemalloc alongside RSS, on the same decode. Nothing retained.
+
+feed                     blob bytes  entities   tracemalloc     RSS delta
+hsl_tripupdates           1,169,988     1,350           236     6,840,320
+vbb                       9,375,399     8,623           236    37,158,912
+ovapi_tripupdates         5,474,273    11,105           236    25,559,040
+
+**tracemalloc reports a few hundred bytes for decoding megabytes.** The
+protobuf runtime above allocates its message arena in C++, outside
+Python's allocator, so tracemalloc is structurally blind to it. RSS sees
+it. This is the first half of the answer: whatever the recorded field
+measured, it was never the decode.
+
+### 4. What tracemalloc CAN see, and what the field therefore holds ###
+
+Snapshot.__init__ stores one Python bytes object per entity, in by_id and
+by_semantic (analyse.py:194-220). Those are ordinary Python allocations,
+they are retained for the whole loop, and tracemalloc counts every one.
+
+Reproducing the analyser's loop on VBB blobs, retaining as it does:
+
+ decodes   reported single-message peak    == retained total
+       1                      9,423,342           19,669,893
+      10                    101,349,102          111,540,703
+      25                    253,888,820          264,008,455
+      50                    504,787,632          514,794,043
+     100                    998,315,820        1,008,041,222
+     169                  1,656,162,696        1,665,531,783
+
+recorded in analysis.json for vbb: 2,143,237,596
+
+The figure tracks the retained entity-payload total and is monotonic in
+the number of snapshots analysed. It is the analyser's own working set,
+attributed to one decode by a reset_peak() that could not isolate one.
+
+===============================================================
+
+### the script that produced the above ###
+
+"""What analysis.json's `single_message_decode_peak_bytes` actually measured.
+
+Same interpreter as the original run (.venv, CPython 3.12.5 / Windows AMD64),
+so the numbers are comparable rather than merely similar.
+
+Written after a first attempt got the answer wrong. That attempt assumed the
+figure was retained decoded FeedMessages; the control below shows tracemalloc
+cannot see those at all, and identifies what it can see instead.
+"""
+import json
+import sys
+import tracemalloc
+from pathlib import Path
+
+import psutil
+from google.protobuf.internal import api_implementation
+from google.transit import gtfs_realtime_pb2
+
+print("### environment ###")
+print(f"python:   {sys.version}")
+print(f"protobuf: {api_implementation.Type()} implementation")
+print()
+
+print("### 1. What is recorded in runs/run2/analysis.json ###")
+print()
+recorded = json.load(open("runs/run2/analysis.json", encoding="utf-8"))
+print(f"{'feed':22} {'single_message_decode_peak':>28} {'process_peak_rss':>18}")
+for feed in recorded["feeds"]:
+    mem = feed["memory"]
+    print(f"{feed['feed']:22} {mem['single_message_decode_peak_bytes']:>28,} "
+          f"{mem['process_peak_rss_bytes']:>18,}")
+vbb = [f for f in recorded["feeds"] if f["feed"] == "vbb"][0]
+print()
+print("VBB is recorded at 2.14 GB for a 'single message'. Its bodies decompress")
+print(f"to a p50 of {vbb['payload_bytes']['decompressed_p50']:,.0f} bytes. The figure is 230x the")
+print("thing it claims to measure, which is what prompted this check.")
+print()
+
+print("### 2. The measurement, as written (analyse.py:631-660) ###")
+print()
+print("""    tracemalloc.start()
+    for obs in observations:
+        if digest not in cache:
+            raw = blob.read_bytes()
+            tracemalloc.reset_peak()
+            cache[digest] = classify_payload(raw)
+            _, peak = tracemalloc.get_traced_memory()
+            single_decode_peak = max(single_decode_peak, peak)
+        ...
+        decoded[obs["seq"]] = Snapshot(obs, message)   # retained, grows every iteration""")
+print()
+print("Two properties of tracemalloc decide what this returns:")
+print("  (a) get_traced_memory() returns process-wide traced allocation, not a")
+print("      delta across the call.")
+print("  (b) reset_peak() sets the peak to the CURRENT total, which already")
+print("      includes everything retained by earlier iterations.")
+print()
+
+blobs = Path("runs/run2/blobs")
+process = psutil.Process()
+
+
+def sample_blob(feed):
+    best = None
+    for line in open("runs/run2/observations.jsonl", encoding="utf-8"):
+        obs = json.loads(line)
+        if obs["feed"] != feed or not obs.get("body_sha256"):
+            continue
+        path = blobs / f"{obs['body_sha256']}.pb"
+        if path.exists() and (best is None or obs["body_bytes_wire"] > best[0]):
+            best = (obs["body_bytes_wire"], path)
+    return best[1] if best else None
+
+
+print("### 3. Control: one decode in isolation, measured two ways ###")
+print()
+print("tracemalloc alongside RSS, on the same decode. Nothing retained.")
+print()
+print(f"{'feed':22} {'blob bytes':>12} {'entities':>9} {'tracemalloc':>13} {'RSS delta':>13}")
+for name in ("hsl_tripupdates", "vbb", "ovapi_tripupdates"):
+    path = sample_blob(name)
+    raw = path.read_bytes()
+    rss_before = process.memory_info().rss
+    tracemalloc.start()
+    tracemalloc.reset_peak()
+    message = gtfs_realtime_pb2.FeedMessage()
+    message.ParseFromString(raw)
+    entities = len(message.entity)
+    _, peak = tracemalloc.get_traced_memory()
+    rss_after = process.memory_info().rss
+    tracemalloc.stop()
+    del message
+    print(f"{name:22} {len(raw):>12,} {entities:>9,} {peak:>13,} {rss_after-rss_before:>13,}")
+print()
+print("**tracemalloc reports a few hundred bytes for decoding megabytes.** The")
+print("protobuf runtime above allocates its message arena in C++, outside")
+print("Python's allocator, so tracemalloc is structurally blind to it. RSS sees")
+print("it. This is the first half of the answer: whatever the recorded field")
+print("measured, it was never the decode.")
+print()
+
+print("### 4. What tracemalloc CAN see, and what the field therefore holds ###")
+print()
+print("Snapshot.__init__ stores one Python bytes object per entity, in by_id and")
+print("by_semantic (analyse.py:194-220). Those are ordinary Python allocations,")
+print("they are retained for the whole loop, and tracemalloc counts every one.")
+print()
+print("Reproducing the analyser's loop on VBB blobs, retaining as it does:")
+print()
+seen, paths = set(), []
+for line in open("runs/run2/observations.jsonl", encoding="utf-8"):
+    obs = json.loads(line)
+    if obs["feed"] != "vbb" or not obs.get("body_sha256"):
+        continue
+    if obs["body_sha256"] not in seen and (blobs / f"{obs['body_sha256']}.pb").exists():
+        seen.add(obs["body_sha256"])
+        paths.append(blobs / f"{obs['body_sha256']}.pb")
+
+retained_messages, retained_payloads = [], []
+reported = 0
+tracemalloc.start()
+print(f"{'decodes':>8} {'reported single-message peak':>30} {'== retained total':>20}")
+for index, path in enumerate(paths, start=1):
+    raw = path.read_bytes()
+    tracemalloc.reset_peak()
+    message = gtfs_realtime_pb2.FeedMessage()
+    message.ParseFromString(raw)
+    _, peak = tracemalloc.get_traced_memory()
+    reported = max(reported, peak)
+    retained_messages.append(message)
+    payloads = {}
+    for entity in message.entity:
+        copy = gtfs_realtime_pb2.FeedEntity()
+        copy.CopyFrom(entity)
+        copy.id = ""
+        payloads[entity.id] = copy.SerializeToString(deterministic=True)
+    retained_payloads.append(payloads)
+    if index in (1, 10, 25, 50, 100) or index == len(paths):
+        current, _ = tracemalloc.get_traced_memory()
+        print(f"{index:>8} {reported:>30,} {current:>20,}")
+tracemalloc.stop()
+print()
+print(f"recorded in analysis.json for vbb: {vbb['memory']['single_message_decode_peak_bytes']:,}")
+print()
+print("The figure tracks the retained entity-payload total and is monotonic in")
+print("the number of snapshots analysed. It is the analyser's own working set,")
+print("attributed to one decode by a reset_peak() that could not isolate one.")

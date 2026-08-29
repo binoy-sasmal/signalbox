@@ -1,0 +1,274 @@
+### environment ###
+captured_at: 2026-08-29T22:33:51Z
+commit: c40e20f715e176a9c2732fc1667981a59cd3749d
+Python 3.12.5
+
+### what this is ###
+Two corrections to Stage 0 numbers, verified against the committed
+observation logs rather than re-argued. Gate 5's bytes-saved prediction
+is computed from these figures, so they are corrected before it starts
+rather than during it.
+
+  (a) 'gtfs.de is the only probed feed that does not compress' was true
+      of run 1 and became false at run 2, when HSL was added. Both HSL
+      endpoints are served uncompressed.
+  (b) HSL's 304 rate was read against a ceiling derived from the MEDIAN
+      inter-request gap. Counted against the generation count instead --
+      which needs no interval statistic -- HSL sits at the floor of
+      possible bodies, not at 89% of a ceiling.
+
+Method: read runs/run1 and runs/run2 observations.jsonl. No network, no
+re-polling, no fixtures. The script is reproduced in full at the end of
+this file so the output can be regenerated from the artefact alone.
+
+===============================================================
+
+### 1. Content-Encoding, every observation in both runs ###
+
+Both runs sent 'Accept-Encoding: gzip, deflate' (config.run*.yaml).
+'Content-Encoding' is on the probe's capture allow-list, so absence here
+is an absent header, not a dropped one.
+
+run    feed                   content-encoding   responses
+run1   gtfs_de                None                      54
+run1   ovapi_tripupdates      gzip                      16
+run1   vbb                    gzip                     137
+run2   hsl_tripupdates        None                     590
+run2   hsl_vehiclepositions   None                    1492
+run2   ovapi_tripupdates      gzip                      61
+run2   vbb                    gzip                     562
+
+### 2. Wire vs decompressed bytes, from the same records ###
+
+run    feed                      wire MB  decomp MB   ratio  bodies
+run1   gtfs_de                    1206.5     1206.5    1.00      30
+run1   ovapi_tripupdates            30.8       91.5    2.97      16
+run1   vbb                         101.2      469.3    4.64      50
+run2   hsl_tripupdates             265.6      265.6    1.00     247
+run2   hsl_vehiclepositions        152.4      152.4    1.00    1489
+run2   ovapi_tripupdates           118.3      328.2    2.77      61
+run2   vbb                         353.9     1549.0    4.38     172
+
+A ratio of 1.00 with no Content-Encoding is an uncompressed transfer.
+
+### 3. HSL trip updates: per-body size, run 2 ###
+
+n            = 247
+mean         = 1,075,427 bytes  (1.075 MB)
+p50          = 1,077,198 bytes
+min / max    = 992,845 / 1,169,988 bytes
+
+### 4. HSL trip updates: the 304 floor, counted without an interval statistic ###
+
+window                     = 3,596s  (59.9 min)
+cadence (measured, run 2)  = 15.0s, stdev 0.00 over 241 distinct stamps
+generations in the window  = 3,596 / 15.0 = 239.7
+
+requests                   = 590   (200: 247, 304: 343)
+requests with no validator = 5  (the first fetch, and re-polls)
+false-200s                 = 3  (200 whose body hash equals its predecessor's)
+
+A server that honours validators perfectly still must send one body per
+generation. So the floor on bodies is the generation count:
+
+  floor                    = 239.7
+  + false-200s             = 3
+  + no-validator requests  = 5
+  = predicted 200s         = 247.7
+    observed 200s          = 247
+    residual               = -0.7
+
+### 5. Why the ceiling in metrics.md reads lower than this ###
+
+inter-request gap: median 5.17s, mean 6.15s, n=585
+The two differ because 304s return fast and 200s do not:
+  elapsed_ms 200: n= 247 p50=   2391 p95=   3156 max=   5093
+  elapsed_ms 304: n= 343 p50=    125 p95=    281 max=    500
+
+analyse.py:680 takes effective_interval_s as the MEDIAN gap, which lands on
+the 304-dominated mode. The ceiling formula 1 - interval/cadence is then
+computed from it:
+  from median gap 5.17s -> ceiling 0.655  (metrics.md's 65.5%)
+  from mean   gap 6.15s -> ceiling 0.590
+  observed 304 rate        = 343/590 = 0.581
+
+The generation count in section 4 needs no interval statistic at all,
+which is why it is the figure metrics.md should carry.
+
+### 6. The same reconciliation on the other run-2 feeds, as a control ###
+
+feed                    cadence   window   floor  obs 200  residual
+vbb                        29.0     3596   124.0      172      48.0
+ovapi_tripupdates          60.0     3598    60.0       61       1.0
+hsl_vehiclepositions      ~2s ?     3597     n/a     1489 cadence unresolved
+
+Read this table for what it is. The floor assumes ONE cadence for the
+whole window, which holds for HSL (stdev 0.00s over 241 stamps) and for
+OVapi (stdev 0.00s, run 2b). It does not hold for VBB: 29.0s is a p50
+over a feed degraded since 2026-06-04, and run 1 measured 16s over a
+shorter window. So VBB's residual of 48 is NOT evidence that VBB honours
+validators less well than HSL -- it is what an unmodelled cadence spread
+looks like, and no claim is made from it here. OVapi's +1.0 is the
+confounded 61.8s-sampling row metrics.md already flags.
+
+Only the HSL row is being used, and only because its cadence has zero
+measured variance.
+
+===============================================================
+
+### the script that produced the above ###
+
+"""Stage 0 corrections: transport compression, and HSL's 304 floor.
+
+Reads runs/run1 and runs/run2 observation logs. Asserts nothing; prints what
+is in them.
+"""
+import collections
+import json
+import statistics
+from datetime import datetime
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent
+
+
+def load(run):
+    path = Path("runs") / run / "observations.jsonl"
+    return [json.loads(line) for line in path.open(encoding="utf-8")]
+
+
+print("### 1. Content-Encoding, every observation in both runs ###")
+print()
+print("Both runs sent 'Accept-Encoding: gzip, deflate' (config.run*.yaml).")
+print("'Content-Encoding' is on the probe's capture allow-list, so absence here")
+print("is an absent header, not a dropped one.")
+print()
+rows = collections.Counter()
+for run in ("run1", "run2"):
+    for obs in load(run):
+        headers = obs.get("response_headers") or {}
+        rows[(run, obs["feed"], headers.get("content-encoding"))] += 1
+print(f"{'run':6} {'feed':22} {'content-encoding':18} {'responses':>9}")
+for (run, feed, enc), count in sorted(rows.items()):
+    print(f"{run:6} {feed:22} {str(enc):18} {count:9}")
+
+print()
+print("### 2. Wire vs decompressed bytes, from the same records ###")
+print()
+print(f"{'run':6} {'feed':22} {'wire MB':>10} {'decomp MB':>10} {'ratio':>7} {'bodies':>7}")
+for run in ("run1", "run2"):
+    per_feed = collections.defaultdict(lambda: [0, 0, 0])
+    for obs in load(run):
+        if obs.get("status") == 200 and obs.get("body_bytes_wire"):
+            acc = per_feed[obs["feed"]]
+            acc[0] += obs["body_bytes_wire"]
+            acc[1] += obs["body_bytes_decompressed"]
+            acc[2] += 1
+    for feed, (wire, decomp, n) in sorted(per_feed.items()):
+        ratio = decomp / wire if wire else 0
+        print(f"{run:6} {feed:22} {wire/1e6:10.1f} {decomp/1e6:10.1f} {ratio:7.2f} {n:7}")
+
+print()
+print("A ratio of 1.00 with no Content-Encoding is an uncompressed transfer.")
+
+print()
+print("### 3. HSL trip updates: per-body size, run 2 ###")
+print()
+sizes = [o["body_bytes_wire"] for o in load("run2")
+         if o["feed"] == "hsl_tripupdates" and o.get("status") == 200]
+sizes.sort()
+print(f"n            = {len(sizes)}")
+print(f"mean         = {statistics.mean(sizes):,.0f} bytes  ({statistics.mean(sizes)/1e6:.3f} MB)")
+print(f"p50          = {statistics.median(sizes):,.0f} bytes")
+print(f"min / max    = {sizes[0]:,} / {sizes[-1]:,} bytes")
+
+print()
+print("### 4. HSL trip updates: the 304 floor, counted without an interval statistic ###")
+print()
+obs2 = [o for o in load("run2") if o["feed"] == "hsl_tripupdates"]
+scheduled = [o for o in obs2 if o.get("probe_action") == "scheduled"]
+times = sorted(datetime.fromisoformat(o["request_at"]) for o in scheduled)
+duration = (times[-1] - times[0]).total_seconds()
+gaps = [(times[i + 1] - times[i]).total_seconds() for i in range(len(times) - 1)]
+n_200 = sum(1 for o in obs2 if o["status"] == 200)
+n_304 = sum(1 for o in obs2 if o["status"] == 304)
+n_total = len(obs2)
+no_validator = sum(1 for o in obs2 if o.get("conditional") == "none")
+
+false_200 = 0
+previous = None
+for o in obs2:
+    if o["status"] == 200 and o.get("body_sha256"):
+        if previous and o["body_sha256"] == previous and o.get("conditional") != "none":
+            false_200 += 1
+        previous = o["body_sha256"]
+
+cadence = 15.0
+generations = duration / cadence
+print(f"window                     = {duration:,.0f}s  ({duration/60:.1f} min)")
+print(f"cadence (measured, run 2)  = {cadence}s, stdev 0.00 over 241 distinct stamps")
+print(f"generations in the window  = {duration:,.0f} / {cadence} = {generations:,.1f}")
+print()
+print(f"requests                   = {n_total}   (200: {n_200}, 304: {n_304})")
+print(f"requests with no validator = {no_validator}  (the first fetch, and re-polls)")
+print(f"false-200s                 = {false_200}  (200 whose body hash equals its predecessor's)")
+print()
+print("A server that honours validators perfectly still must send one body per")
+print("generation. So the floor on bodies is the generation count:")
+print()
+print(f"  floor                    = {generations:,.1f}")
+print(f"  + false-200s             = {false_200}")
+print(f"  + no-validator requests  = {no_validator}")
+print(f"  = predicted 200s         = {generations + false_200 + no_validator:,.1f}")
+print(f"    observed 200s          = {n_200}")
+print(f"    residual               = {n_200 - (generations + false_200 + no_validator):,.1f}")
+print()
+print("### 5. Why the ceiling in metrics.md reads lower than this ###")
+print()
+mean_gap = statistics.mean(gaps)
+median_gap = statistics.median(gaps)
+print(f"inter-request gap: median {median_gap:.2f}s, mean {mean_gap:.2f}s, n={len(gaps)}")
+print("The two differ because 304s return fast and 200s do not:")
+elapsed_200 = sorted(o["elapsed_ms"] for o in obs2 if o["status"] == 200)
+elapsed_304 = sorted(o["elapsed_ms"] for o in obs2 if o["status"] == 304)
+for label, series in (("200", elapsed_200), ("304", elapsed_304)):
+    print(f"  elapsed_ms {label}: n={len(series):4} p50={statistics.median(series):7.0f} "
+          f"p95={series[int(0.95*len(series))]:7.0f} max={max(series):7.0f}")
+print()
+print("analyse.py:680 takes effective_interval_s as the MEDIAN gap, which lands on")
+print("the 304-dominated mode. The ceiling formula 1 - interval/cadence is then")
+print("computed from it:")
+print(f"  from median gap {median_gap:.2f}s -> ceiling {1 - median_gap/cadence:.3f}  (metrics.md's 65.5%)")
+print(f"  from mean   gap {mean_gap:.2f}s -> ceiling {1 - mean_gap/cadence:.3f}")
+print(f"  observed 304 rate        = {n_304}/{n_total} = {n_304/n_total:.3f}")
+print()
+print("The generation count in section 4 needs no interval statistic at all,")
+print("which is why it is the figure metrics.md should carry.")
+
+print()
+print("### 6. The same reconciliation on the other run-2 feeds, as a control ###")
+print()
+print(f"{'feed':22} {'cadence':>8} {'window':>8} {'floor':>7} {'obs 200':>8} {'residual':>9}")
+for feed, cad in (("vbb", 29.0), ("ovapi_tripupdates", 60.0), ("hsl_vehiclepositions", None)):
+    rec = [o for o in load("run2") if o["feed"] == feed]
+    sched = [o for o in rec if o.get("probe_action") == "scheduled"]
+    ts = sorted(datetime.fromisoformat(o["request_at"]) for o in sched)
+    win = (ts[-1] - ts[0]).total_seconds()
+    got = sum(1 for o in rec if o["status"] == 200)
+    if cad is None:
+        print(f"{feed:22} {'~2s ?':>8} {win:8.0f} {'n/a':>7} {got:8} {'cadence unresolved':>9}")
+        continue
+    floor = win / cad
+    print(f"{feed:22} {cad:8.1f} {win:8.0f} {floor:7.1f} {got:8} {got-floor:9.1f}")
+print()
+print("Read this table for what it is. The floor assumes ONE cadence for the")
+print("whole window, which holds for HSL (stdev 0.00s over 241 stamps) and for")
+print("OVapi (stdev 0.00s, run 2b). It does not hold for VBB: 29.0s is a p50")
+print("over a feed degraded since 2026-06-04, and run 1 measured 16s over a")
+print("shorter window. So VBB's residual of 48 is NOT evidence that VBB honours")
+print("validators less well than HSL -- it is what an unmodelled cadence spread")
+print("looks like, and no claim is made from it here. OVapi's +1.0 is the")
+print("confounded 61.8s-sampling row metrics.md already flags.")
+print()
+print("Only the HSL row is being used, and only because its cadence has zero")
+print("measured variance.")

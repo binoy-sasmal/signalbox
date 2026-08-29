@@ -83,8 +83,8 @@ author's imagination, which is a different and more precise complaint.
 
 **gtfs.de was excluded as a tenant on measured resource grounds**, with the arithmetic written down:
 
-- ~42 MB uncompressed per fetch — the only probed feed that does not gzip — against a measured 30s
-  cadence. Tracking it costs **5–10 GB/hour**, continuous, from a sponsored volunteer service.
+- ~42 MB uncompressed per fetch — it does not gzip — against a measured 30s cadence. Tracking it
+  costs **5–10 GB/hour**, continuous, from a sponsored volunteer service.
 - 178,942 entities per snapshot, twice a minute, into one Postgres shared by every tenant on a 12 GB
   node.
 - Slowing to 5-minute polling still costs ~363 GB/month **and** makes freshness meaningless against a

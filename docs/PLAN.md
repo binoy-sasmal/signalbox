@@ -659,7 +659,7 @@ State these before anyone asks:
 - **No public transit data is personal data.** Do not frame any of this as GDPR compliance.
 - **Feed size is a real admission constraint, and we found it by measuring.** gtfs.de is
   characterised and **excluded as a tenant on resource grounds**: ~40 MB uncompressed per fetch (the
-  only probed feed that does not gzip) against a measured ~29s cadence — not the documented 10s —
+  does not gzip) against a measured ~29s cadence — not the documented 10s —
   which is 5–9.6 GB/hour of continuous traffic from a volunteer service, and 163,819 entities per
   snapshot roughly twice a minute into one Postgres shared by every tenant on a 12 GB node. Slowing
   to 5-minute polling still costs ~350 GB/month *and* makes freshness meaningless against a

@@ -49,9 +49,18 @@ grid and are **not** recorded as feed cadences.
 | vbb | 2.03 MB | 9.39 MB | gzip |
 | ovapi_tripupdates | 1.93 MB | 5.74 MB | gzip |
 
-**gtfs.de is the only probed feed that does not compress.** `Accept-Encoding: gzip, deflate` was
-sent on every request and no `Content-Encoding` came back. At the ratios the other two feeds show,
-it is shipping roughly 4× more than it needs to.
+**gtfs.de does not compress.** `Accept-Encoding: gzip, deflate` was sent on every request and no
+`Content-Encoding` came back. At the ratios the other two feeds show, it is shipping roughly 4×
+more than it needs to.
+
+> **CORRECTED 2026-08-30.** This paragraph read *"gtfs.de is the **only** probed feed that does not
+> compress"*. That was true of the three feeds in run 1 and **false from run 2 onward**, where both
+> HSL endpoints also returned no `Content-Encoding`. The capture was never wrong — a uniqueness
+> claim was simply not re-checked when the population it quantified over grew. Full counts, both
+> runs, every observation:
+> [`runs/stage0-corrections/`](../runs/stage0-corrections/compression-and-304-floor.txt).
+> The gtfs.de exclusion arithmetic below is unaffected: it rests on 42 MB per fetch, not on being
+> alone in that.
 
 #### Clock
 
@@ -238,6 +247,90 @@ Small, and not itself a problem at that rate. Worth recording because it demonst
 **live rather than dead code**: a server that honours validators most of the time can still return a
 redundant body, and Gate 5's bytes-saved claim would silently overstate itself without measuring
 this. A 304 rate alone would have looked clean.
+
+#### CORRECTED: HSL's conditional-request behaviour is at its floor, not at 89% of a ceiling
+
+**Corrected 2026-08-30, while designing Gate 5.** The Gate 0 table below reads HSL's 58.6% against
+a 65.5% ceiling, which invites the reading that it honours validators about 89% of the time. That
+ceiling came from `1 − interval/cadence` with the interval taken as the **median** inter-request
+gap. The distribution does not support a median: 304s return in 125 ms and 200s take 2.4 s, so the
+median (5.17 s) sits on the 304 mode while the mean is 6.15 s.
+
+Counted a way that needs no interval statistic at all, and is therefore not sensitive to which one
+you pick — **a server honouring validators perfectly must still send one body per generation**:
+
+| | |
+|---|---|
+| Window | 3,596 s |
+| Cadence | 15.0 s, stdev **0.00 s** over 241 distinct stamps |
+| Generations, and so the floor on bodies | **239.7** |
+| + false-200s | 3 |
+| + requests sent with no validator | 5 |
+| **= predicted 200s** | **247.7** |
+| **observed 200s** | **247** |
+| residual | **−0.7** |
+
+**Every avoidable body was avoided.** The only bodies beyond the floor are the 3 measured false-200s
+and the 5 unconditional requests, and they account for the excess to within one response.
+
+Two things this does *not* say. It is not a new measurement — the observations are unchanged and
+Gate 0's verdict is unaffected, since criterion 3 asks that conditional-request behaviour be
+*characterised*. And it does not transfer to the other feeds: the floor assumes one cadence across
+the window, which holds for HSL (stdev 0.00 s) and not for VBB, whose 29.0 s is a p50 over a
+degraded feed. **The control table in the capture shows VBB with a residual of 48 and explicitly
+declines to read it.**
+[`runs/stage0-corrections/compression-and-304-floor.txt`](../runs/stage0-corrections/compression-and-304-floor.txt).
+
+#### HSL is served uncompressed — 1.075 MB per body, every time
+
+`Accept-Encoding: gzip, deflate` was sent on all 590 requests and **no `Content-Encoding` came
+back** on any of them; `body_bytes_wire` equals `body_bytes_decompressed` equals `Content-Length`
+across all 247 bodies. Same for `hsl_vehiclepositions`. VBB (4.38×) and OVapi (2.77×) do compress.
+
+| Feed | Bodies | Wire | Decompressed | Ratio | `Content-Encoding` |
+|---|---|---|---|---|---|
+| `hsl_tripupdates` | 247 | 265.6 MB | 265.6 MB | **1.00** | **none** |
+| `hsl_vehiclepositions` | 1,489 | 152.4 MB | 152.4 MB | **1.00** | **none** |
+| `vbb` | 172 | 353.9 MB | 1,549.0 MB | 4.38 | gzip |
+| `ovapi_tripupdates` | 61 | 118.3 MB | 328.2 MB | 2.77 | gzip |
+
+Per body, HSL trip updates: **mean 1,075,427 B, p50 1,077,198 B, range 992,845 – 1,169,988 B**.
+
+This is a Gate 5 input, not trivia. Gate 5's bytes-saved prediction is computed from the wire
+figure, and a reader who assumed HSL gzips like the other two would recompute it roughly 4× too
+small. It also corrects the uniqueness claim in the run 1 section above.
+
+#### The recorded decode-peak field is **not usable**, and this is what it measured
+
+`runs/run2/analysis.json` carries `memory.single_message_decode_peak_bytes` per feed, and PLAN
+section 7 names it as the input to Gate 5's memory sizing. **It is not a decode peak. Do not size
+anything from it.** It is left in the run artefact rather than deleted — the artefact records what
+the run produced — and is recorded here as unusable with the reason.
+
+| Feed | Recorded "single message" peak | Actual decompressed body (p50) |
+|---|---|---|
+| `vbb` | **2,143,237,596** | 9,006,580 |
+| `hsl_vehiclepositions` | 639,931,120 | 102,290 |
+| `ovapi_tripupdates` | 589,118,703 | 5,380,383 |
+| `hsl_tripupdates` | 331,021,092 | 1,077,198 |
+
+Two defects compound, both demonstrated in
+[`runs/stage0-corrections/decode-peak-not-a-decode-peak.txt`](../runs/stage0-corrections/decode-peak-not-a-decode-peak.txt):
+
+1. **`tracemalloc` cannot see a protobuf decode at all.** The `upb` runtime allocates its message
+   arena in C++, outside Python's allocator. The isolated control decodes a 9.4 MB VBB body and
+   `tracemalloc` reports **236 bytes** while RSS moves **37 MB**.
+2. **What it does see is cumulative.** `get_traced_memory()` is process-wide and `reset_peak()`
+   lowers the peak only to the *current* total, which already holds every per-entity `bytes` object
+   retained by earlier iterations. Replaying the analyser's loop reproduces the growth: 9.4 MB after
+   one decode, 1.0 GB after 100, 1.66 GB after 169 — against the 2.14 GB recorded.
+
+**The method constraint that follows, for Gate 5:** the decode benchmark must measure **RSS**, not
+`tracemalloc`. PLAN section 7 already requires it to run inside a Linux container so architecture is
+the only remaining confound; this adds that the instrument itself has to change. Indicative
+single-decode RSS deltas from the control, CPython 3.12.5 / Windows AMD64 — **indicative only, and
+not a sizing input**: HSL trip updates 6.8 MB for a 1.17 MB body, VBB 37.2 MB for 9.4 MB, OVapi
+25.6 MB for 5.5 MB.
 
 #### Evidence strength varies sharply between feeds
 
@@ -471,8 +564,9 @@ Whether the ingest service can actually keep up with them is Gate 5.
   that it forces real per-tenant secret handling and a real rate limiter for Stage 2 and Stage 3.
 - **OVapi licence** — deliberately `unresolved`; see the finding above.
 - Ingest memory sizing: single-message decode peak × queue depth × safety factor, to be measured in
-  a Linux container so architecture is the only remaining confound.
-- Ingest memory sizing: single-message decode peak × queue depth × safety factor, to be measured in
-  a Linux container so architecture is the only remaining confound.
+  a Linux container so architecture is the only remaining confound. **The Stage 0 field that was
+  meant to supply the first term does not** — see *The recorded decode-peak field is not usable*,
+  above — so this term has no value at all yet, rather than a rough one. It must be measured by
+  **RSS**, not `tracemalloc`.
 - Everything from Stage 1 onward: rebuild drill time, onboarding manual-step count, Prometheus
   series per tenant, SLO attainment.
