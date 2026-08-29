@@ -104,6 +104,31 @@ nothing feels wrong.
 conversation. It reads artefacts, not your account of them — so do not summarise the work to
 it, and do not treat its ACCEPT as agreement with your reasoning. It never saw your reasoning.
 
+### A review is only valid from a configuration that still exists
+
+**Nothing written during a session can be validated inside that session.** Agent bodies under
+`.claude/agents/`, skills under `.claude/skills/`, `CLAUDE.md`, and whether an agent is
+registered at all are each snapshotted when the session starts. Edit any of them and the
+running session keeps serving the old copy to every subagent it spawns.
+
+Three consequences, in the order they bite:
+
+1. **Any change to `.claude/agents/` or `.claude/skills/` requires a restart before a review
+   can be trusted.** Not "should ideally"; the reviewer will run, produce well-formatted
+   output, and be reading instructions you replaced.
+2. **A review run in the same session that modified the reviewer is reviewing a configuration
+   that no longer exists. Its verdict is void.** Record it as VOID in `docs/reviews/log.md`
+   rather than acting on it or deleting it.
+3. **`CLAUDE.md` edits do not reach a subagent until restart.** The isolation this file's
+   "Current position" pointer is built on does not take effect in the session that moved it.
+
+Observed 2026-08-29, not reasoned about: a probe of the running reviewer found its system
+prompt missing a section committed earlier in the same session, and its `CLAUDE.md` still
+carrying the status block that had already been moved out. Two reviews were voided on it.
+
+This is easy to forget in three weeks and expensive to rediscover, because a stale review is
+indistinguishable from a current one by its output alone. **Restart, then review.**
+
 ---
 
 ## Hard rules

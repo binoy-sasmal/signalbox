@@ -20,3 +20,11 @@ should not go looking for an account of it.
 
 Apply your standing instructions in full: artefacts only, all ten rubric items,
 halt on any escalation condition, and one of the four adjudications at the end.
+
+**Before adjudicating, check whether the range touches `.claude/agents/`,
+`.claude/skills/` or `CLAUDE.md`.** If it does, your own configuration was
+snapshotted when this session started and may predate the change you are
+reviewing — you could be reading instructions the diff has already replaced, with
+no way to tell from inside. Say so in your output and treat it as an escalation
+condition, not a caveat. A concrete symptom to check for: a section the diff adds
+to your own agent definition that is absent from your system prompt.
