@@ -310,9 +310,51 @@ within one character of the hole — a base64 case, an AWS case and a planted ke
 three missed because no fixture happened to contain a `+`. Fixture choice was doing the
 work the test was supposed to do.
 
-Two accepted gaps now ship as fixtures marked *intentional exemption* rather than living in
+Accepted gaps now ship as fixtures marked *intentional exemption* rather than living in
 `docs/limits.md` alone. An accepted gap with a test is a decision; one recorded only in
 prose is something the next person closes or widens without knowing it was deliberate.
+
+#### Eight. The eighth was inside the fix for the seventh — 2026-08-29, review 7's F1
+
+**This is the most useful entry in the sequence, and it is the one that cost the least to
+find.** The narrowing above shipped with two fixtures marked *intentional exemption*, and
+both were written from the exemption's **intent**: a literal split across an operator, a
+credential carrying a nested bracket pair. Review 7 planted what the **parser** accepts and
+found a third, smaller case neither covered — a single unmatched opener:
+
+```
+api_key: sk-live-9f8e7d6c5b4a3210fedc(
+```
+
+One appended character. `has_bracket_structure` returns with a non-empty stack on purpose,
+so that `AUTH_PARAM_PATTERNS = (` — the first line of a multi-line tuple, a real value in
+this repo — stays exempt. The consequence is that any credential with an opener stuck on
+the end is exempt too. The predicate's acceptance set was wider than the suite and
+`docs/limits.md` both described it.
+
+**The rule was right and did not fire on its own author.** The commit immediately before
+this one wrote the hard rule into `CLAUDE.md`: *an exemption ships with an adversarial test
+targeting its parser, not its intent.* One commit later, the tests written to close the
+seventh bypass were themselves tests of intent. Nothing about knowing the rule, having just
+written it down, and applying it deliberately was sufficient — which is the strongest
+available evidence that the mitigation has to be **an outside reader planting inputs**, not
+the author's own care. This one was found by a reviewer looking for exactly the shape that
+had just been named, one commit after it was named, in the code written to close it.
+
+**Ruled accepted, not closed** — the human, 2026-08-29. Requiring depth to return to zero
+closes the gap and breaks `AUTH_PARAM_PATTERNS = (`, so it needs a second carve-out: two
+exemptions to defend instead of one. That reasoning was already on the record and still
+holds. What changes is that the gap is now pinned at its true width — a third fixture in
+`TestAcceptedExemptionGaps`, a third bullet in `docs/limits.md`, and this entry — rather
+than being one character wider than either document said.
+
+The cost of the ruling is verified rather than asserted: under `return seen and not stack`
+the suite fails on exactly two cases, the new fixture and `AUTH_PARAM_PATTERNS = (`.
+Captured in [`runs/secrets-gate/unmatched-opener-fail-first.txt`](../../runs/secrets-gate/unmatched-opener-fail-first.txt).
+
+**The narrowed predicate, with this gap accepted, is approved as it stands.** Future ranges
+containing it are not a methodology change to the enforced gate and are not grounds for a
+halt on that basis.
 
 *A correction to the record, and then a correction to the correction.* The commit that
 added this exemption, `df63680`, reported that ungating raised **7** findings against the

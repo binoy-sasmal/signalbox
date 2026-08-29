@@ -156,6 +156,12 @@ def has_bracket_structure(value: str) -> bool:
     line of a multi-line tuple and must stay exempt; requiring depth to return
     to zero would need a second carve-out for it, and one exemption to defend
     beats two.
+
+    **The price of that is a single unmatched opener.** `<a real key>(` is one
+    appended character and it is exempt -- a smaller input than either of the
+    other two accepted gaps. Ruled accepted rather than closed on 2026-08-29
+    (review 7 F1), and pinned by test_intentional_exemption_unmatched_opener so
+    the acceptance set is visible rather than inferable from this paragraph.
     """
     stack: list[str] = []
     seen = False
@@ -219,16 +225,21 @@ def is_an_expression(value: str) -> bool:
     is judged on the literal inside rather than waved through for having
     brackets around it.
 
-    Two known and accepted gaps, both fixture-pinned in the suite rather than
-    recorded only in prose, so that neither is closed or widened by someone who
+    Three known and accepted gaps, all fixture-pinned in the suite rather than
+    recorded only in prose, so that none is closed or widened by someone who
     did not know it was deliberate:
 
     - A literal split across an operator -- `api_key = "sk-" + "live-real"` --
       reads as an expression and is exempt.
     - A credential carrying a nested bracket pair -- `sk-live-abc(def)` -- is
       exempt.
+    - A credential carrying a single unmatched opener -- `sk-live-abc(` -- is
+      exempt, because has_bracket_structure deliberately allows depth to end
+      above zero. The smallest of the three, and the one the first two did not
+      cover: they were written from the intent, this one from what the parser
+      accepts. Found by review 7 inside the fix for review 6.
 
-    Both are deliberate bypasses rather than accidental commits, and this
+    All three are deliberate bypasses rather than accidental commits, and this
     gate's threat model is the accident. Recorded in docs/limits.md.
     """
     stripped, previous = value.strip(), None

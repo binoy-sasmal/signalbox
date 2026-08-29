@@ -175,7 +175,7 @@ generalisation is in [ADR 0004](decisions/0004-probe-methodology.md) section 13:
 exemption predicate must be defined over the complement of the protected value's
 alphabet.**
 
-**Two known and accepted gaps remain in it. Both are now pinned as fixtures marked
+**Three known and accepted gaps remain in it. All are pinned as fixtures marked
 *intentional exemption*, not left to this file alone** — an accepted gap with a test is
 a decision; one recorded only in prose is something the next person closes or widens
 without knowing it was deliberate.
@@ -186,9 +186,24 @@ without knowing it was deliberate.
   Accepted on the ground that no credential format this project handles — base64,
   base64url, hex, JWT — admits a bracket at all, so it is not a shape a pasted secret
   arrives in. Weaker than the alphabet argument for `+`, and recorded at that strength.
+- **A credential carrying a single unmatched opener.** `sk-live-abc(` is exempt — one
+  character appended to a pasted key, and a *smaller* input than either gap above.
+  `has_bracket_structure` returns with a non-empty stack deliberately, so that
+  `AUTH_PARAM_PATTERNS = (` — the first line of a multi-line tuple — stays exempt.
+  Requiring depth to return to zero closes this and breaks that, which is two exemptions
+  to defend instead of one; **verified, not assumed** — under `return seen and not stack`
+  the suite fails on exactly those two cases
+  ([`runs/secrets-gate/unmatched-opener-fail-first.txt`](../runs/secrets-gate/unmatched-opener-fail-first.txt)).
+  Ruled accepted 2026-08-29, review 7 F1.
 
-Both are deliberate bypasses rather than accidental commits, and this gate's threat
+All three are deliberate bypasses rather than accidental commits, and this gate's threat
 model is the accident.
+
+**The third one was found inside the fix for the second, one commit after the rule that
+exists to catch it was written.** The first two bullets were written from the exemption's
+*intent* — a split literal, a nested pair — and the parser's acceptance set was wider than
+both. That is the same shape as everything in ADR 0004 section 13's sequence, and it is
+recorded there as the eighth entry rather than smoothed over here.
 
 **And the reason it stayed invisible:** `TestEveryTrackedFileIsInScope` asserts a
 tracked file is *scanned*. It says nothing about which rules then run on it, so it

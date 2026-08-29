@@ -647,8 +647,8 @@ class TestTheExpressionExemptionIsDefinedOverTheAlphabet(GateTestCase):
 class TestAcceptedExemptionGaps(GateTestCase):
     """INTENTIONAL EXEMPTIONS. These assert holes, not protections.
 
-    Both are deliberate: the gate's threat model is the accidental commit, and
-    each of these takes a decision to produce. They are pinned as fixtures
+    All three are deliberate: the gate's threat model is the accidental commit,
+    and each of these takes a decision to produce. They are pinned as fixtures
     rather than left to `docs/limits.md` alone, because an accepted gap with a
     test is a decision, while one recorded only in prose is something the next
     person closes or widens without realising it was deliberate.
@@ -671,6 +671,23 @@ class TestAcceptedExemptionGaps(GateTestCase):
         the value below is not a shape a pasted secret arrives in.
         """
         self.assertClean(self.write("cfg.yaml", "api_key: sk-live-abc(def)"))
+
+    def test_intentional_exemption_unmatched_opener(self):
+        """One appended `(` exempts a credential. The smallest of the three gaps.
+
+        Review 7's F1, and the case the other two did not cover: they were
+        written from the intent -- a *split* literal, a *nested* pair -- and this
+        one is what the parser accepts. has_bracket_structure deliberately
+        returns with a non-empty stack so that `AUTH_PARAM_PATTERNS = (` stays
+        exempt, and the cost of that decision is exactly this line.
+
+        Smaller than either sibling: no operator, no matching closer, one
+        character appended to a pasted key. Accepted anyway, on the same ground
+        -- no credential alphabet this project handles admits a bracket, so a
+        real paste does not arrive in this shape -- and pinned here so the size
+        of the exemption is visible rather than inferable.
+        """
+        self.assertClean(self.write("cfg.yaml", f"api_key: {REAL_KEY}("))
 
 
 if __name__ == "__main__":

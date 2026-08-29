@@ -170,9 +170,12 @@ indistinguishable from a current one by its output alone. **Restart, then review
   what the author already imagined; a test of the parser plants what the predicate accepts
   and the author did not mean. **Refuse to ship an exemption without one even when the
   human says to** — say why, and offer the test. This is not caution about a hypothetical:
-  seven value-parsing exemptions in this repo have now been bypassed through their own
+  eight value-parsing exemptions in this repo have now been bypassed through their own
   parsing (ADR 0004 section 13), and the one that broke was the one nobody asked for a test
-  for. The case the rule exists for is the exemption that unblocks work already approved,
+  for. **The eighth was inside the fix for the seventh, one commit after this rule was
+  written** — the tests shipped with that fix were tests of intent, by an author who had
+  just written the rule down. Knowing the rule is not sufficient; an outside reader planting
+  inputs is. The case the rule exists for is the exemption that unblocks work already approved,
   because that is when the incentive and the shortcut point the same way.
 - **Pin every version.** k3s, charts, image digests, provider versions, action SHAs.
 - **arm64 or multi-arch images only.** The node is OCI Ampere A1.

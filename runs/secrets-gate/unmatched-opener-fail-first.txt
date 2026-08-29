@@ -1,0 +1,43 @@
+### environment ###
+captured_at: 2026-08-29T21:55:23Z
+commit: 0f8fbe048c151c088db387752007581083979093  (plus the working-tree change adding the test)
+Python 3.11.5
+
+### what this is ###
+Review 7 F1 asked for a third intentional-exemption fixture pinning the
+unmatched opener. A test that asserts a HOLE passes trivially if the hole
+is wider than intended, so it is worth nothing until it has been seen to
+fail. This is that check, by the method review 5 put on the record: make
+the assertion fail deliberately, then restore.
+
+### the deliberate break ###
+has_bracket_structure returns 'seen' with a non-empty stack, on purpose.
+Requiring depth to return to zero is the obvious way to close the gap:
+
+    -    return seen
+    +    return seen and not stack
+
+### result under that change ###
+FAIL: test_intentional_exemption_unmatched_opener (test_check_no_secrets.TestAcceptedExemptionGaps.test_intentional_exemption_unmatched_opener)
+FAIL: test_real_expressions_stay_exempt (test_check_no_secrets.TestTheExpressionExemptionIsDefinedOverTheAlphabet.test_real_expressions_stay_exempt)
+Ran 57 tests in 0.220s
+FAILED (failures=2)
+
+Two failures, and the second is the whole argument:
+
+  - test_intentional_exemption_unmatched_opener fails, so the new fixture
+    is capable of failing. It pins a real property of the parser rather
+    than restating something that is true regardless.
+  - test_real_expressions_stay_exempt fails too, on 'AUTH_PARAM_PATTERNS = ('
+    -- the first line of a multi-line tuple, which is a legitimate value in
+    this repo and must stay exempt. Closing the gap this way therefore needs
+    a second carve-out for a line ending in an opener: two exemptions to
+    defend instead of one. That is the cost the human weighed in ruling the
+    gap accepted rather than closed.
+
+### restored ###
+$ python -m unittest discover -s scripts/probe -p 'test_check_no_secrets.py'
+Ran 57 tests in 0.197s
+
+OK
+[exit 0]
