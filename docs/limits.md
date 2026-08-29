@@ -104,7 +104,7 @@ backslashes would deny a Windows path before the `-C` rule is ever reached, whic
 is a denial for the wrong reason.
 
 
-## The credential gate cannot fire on the case it exists for
+## The credential gate: one half closed, one half open
 
 Recorded 2026-08-29, after an AWS `credentials` file was created at `.aws/credentials`
 inside this repo instead of `~/.aws`. It was caught by reading a directory listing.
@@ -125,48 +125,63 @@ So **a pass means "no tracked file violates the rules", never "the working tree 
 clean."** The first moment a credential file becomes visible to the tracked-file scan
 is the commit that adds it.
 
-### Half two, worse: the rule that would fire is gated on file suffix.
+### Half two — CLOSED 2026-08-29 in `df63680`: the rule was gated on file suffix.
 
-Found while checking half one, and it is the more serious of the two.
-`check_no_secrets.py` restricts its `key = value` rule to a suffix set —
+**This half is fixed. It is kept here because how it was found is the transferable
+part.** `check_no_secrets.py` restricted its `key = value` rule to a suffix set —
 `.yaml .yml .json .toml .ini .cfg .env .tfvars`. An AWS credentials file is
-**extensionless**. `is_scannable()` admits it, so it is counted as scanned, and then
-the one rule that would have caught it never runs.
+**extensionless**. `is_scannable()` admitted it, so it was counted as scanned, and
+then the one rule that would have caught it never ran. Measured with a synthetic key
+pair, never a real one:
 
-Measured with a synthetic AWS key pair, never the real one:
+| File | Before `df63680` | After |
+|---|---|---|
+| `credentials` (extensionless) | `passed (1 scanned, 0 skipped)` | **FAILED** on `aws_secret_access_key` |
+| identical bytes as `creds.ini` | **FAILED** | **FAILED** |
 
-| File | Result |
-|---|---|
-| `credentials` (extensionless) | `passed (1 file(s) scanned, 0 skipped)` |
-| identical bytes as `creds.ini` | **FAILED** — `auth-shaped key 'aws_secret_access_key' holds a literal value` |
-| identical bytes as `creds.env` | **FAILED** — same finding |
+So, before the fix: **had `git add -A` staged `.aws/credentials`, neither the
+pre-commit hook nor the CI job would have stopped the commit.** Both would have
+scanned the file and both would have passed it.
 
-The consequence, stated plainly: **had `git add -A` staged `.aws/credentials`, neither
-the pre-commit hook nor the CI job would have stopped the commit.** The pre-commit
-hook scans staged paths and CI scans tracked paths; both would have scanned this file
-and both would have passed it.
+The shape, which is the part worth carrying: `is_scannable()` had been widened to
+admit extensionless files *precisely because* credentials live in them, and the rule
+that catches credentials was left gated on suffix. **The widening opened the hole it
+was meant to close.** Rubric item 1 — an exemption satisfied by an input that does not
+satisfy its intent — for the fifth or sixth time here.
 
-This is the same shape as the finding that produced `2b01a5b` — `is_scannable()` was
-widened to admit extensionless files precisely because a credential ends up in one,
-and the strongest rule was left gated on suffix, so the widening bought less than it
-appeared to. Rubric item 1 again: an exemption satisfied by an input that does not
-satisfy its intent.
+The fix runs the rule on every scannable file. Adding `""` to the suffix set was
+rejected: it closes this case and leaves `.rego`, `.conf` and `.tpl` open for the
+identical reason. The cost of ungating is that source files come into scope, where an
+auth-shaped name is routinely bound to an expression; `is_an_expression()` exempts
+those structurally, on the ground that a credential is a single opaque token.
 
-Note also that `TestEveryTrackedFileIsInScope` does **not** cover this. It asserts a
-tracked file is *scanned*; it says nothing about which rules then apply to it.
+**Known and accepted gap in that exemption:** a literal split across an operator,
+`api_key = "sk-" + "live-real"`, reads as an expression and is exempt. That is a
+deliberate bypass rather than an accidental commit, and this gate's threat model is
+the accident.
 
-### What would close each half
+**And the reason it stayed invisible:** `TestEveryTrackedFileIsInScope` asserts a
+tracked file is *scanned*. It says nothing about which rules then run on it, so it
+could never have failed on this. `TestTheRulesRunOnEveryTrackedSuffix` now plants a
+credential under every suffix present in the tree and requires each to be caught.
+**"Scanned" without "and the relevant rules ran" is not coverage.**
 
-- **Scope.** Scan untracked-but-unignored working-tree files, as a pre-commit concern
-  rather than a tracked-file one. The tracked-file scan is the wrong instrument: by
-  the time a file is tracked the decision has been made. `git status --porcelain
-  --untracked-files=all` minus ignored paths is the candidate set.
-- **The suffix gate.** Apply the `key = value` rule to extensionless files too — the
-  same widening `is_scannable()` already received, in the same direction and for the
-  same reason.
+### Half one stays OPEN: scope
 
-**Deliberately not implemented on 2026-08-29.** Recorded on the human's instruction
-so that Gate 1 is not blocked on it. Until it is done, `.gitignore`'s credential
-patterns are the only thing standing between `git add -A` and a pushed key — and an
-ignore rule is not a gate: `git add -f` overrides it, and it covers only the paths
-someone thought of in advance.
+Nothing above changes it. The check still walks tracked files, and an untracked
+credential in the working tree is still invisible to it.
+
+*What would close it:* scan untracked-but-unignored working-tree files, as a
+pre-commit concern rather than a tracked-file one. The tracked-file scan is the wrong
+instrument — by the time a file is tracked the decision has been made. `git status
+--porcelain --untracked-files=all` minus ignored paths is the candidate set.
+
+**Deliberately not implemented, and the asymmetry is the reason.** Half two failed
+toward a *false pass*: it reported a file as scanned and clean while it held a key
+pair. Half one fails toward *not looking*, which is honest — the gate never claims to
+have inspected the working tree. A limitation that understates its own coverage can
+be worked around by someone who reads it; one that overstates cannot.
+
+Until it is done, `.gitignore`'s credential patterns are what stands between
+`git add -A` and a pushed key — and an ignore rule is not a gate: `git add -f`
+overrides it, and it covers only the paths someone thought of in advance.
