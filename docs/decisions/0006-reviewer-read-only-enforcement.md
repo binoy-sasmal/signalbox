@@ -82,6 +82,17 @@ enforcement" and needs no explanation of why it did not run.
 **Option 3.** Taken by the human, on the reasoning below, recorded here rather
 than decided here.
 
+**Provenance, confirmed 2026-08-29.** The review of `0419f6b..09278d2` flagged that
+this sentence is not checkable from artefacts. The removal is `0381df6`; this ADR is
+`471af6a`, one commit later — so the three options, their costs, and the rejections
+of Options 1 and 2 all first appear in a document written after the guard was
+already deleted. From outside, a decision the human made and a decision narrated as
+theirs afterwards look identical, and the ordering is the documented warning sign.
+**The human has confirmed directly that Option 3 was their decision, taken before
+the removal.** The claim stands. The commit ordering is the defect, and the rule it
+points at is already in `CLAUDE.md` rule 1: an ADR ships with or ahead of the change
+it governs, so the record is checkable without anyone having to ask.
+
 A check that does not run is not enforcement — that is this repo's own argument,
 and it does not stop applying when the check is one we built. Worse, a check that
 *looks* like enforcement is worse than none: it buys false confidence and costs
