@@ -1,0 +1,85 @@
+### environment ###
+captured_at: 2026-08-29T21:50:45Z
+commit: 0f8fbe048c151c088db387752007581083979093  (plus the working-tree change to
+        variables.tf from review 7 F4, which moves the line numbers quoted below)
+Terraform v1.16.0
+on windows_amd64
+
+$HOME/.oci/ does not exist on this machine:
+  ls: cannot access '/c/Users/binoy/.oci': No such file or directory
+
+### what this is ###
+Review 7 F2: Gate 2's two adversarial observations existed only as narrative
+in docs/status.md and ADR 0008, in a range whose theme was that narrative is
+not evidence. This file is those two observations as program output.
+
+Both are FAILURES, deliberately. Neither is a gate passing. Gate 2's actual
+criterion -- destroy then apply produces a working SSH-able node, twice --
+has not run and cannot until an OCI tenancy exists.
+
+### how it was run ###
+The three required variables have no defaults, so plan cannot start without
+values. The ones below are PLACEHOLDERS supplied on the command line to get
+the run past variable collection; none is committed and none was observed:
+  compartment_ocid = ocid1.compartment.oc1..aaaaaaaaplaceholder
+  ssh_ingress_cidr = 203.0.113.7/32   (RFC 5737 TEST-NET-3, not a real address)
+  node_image_ocid  = varies per run below
+
+-lock=false is passed deliberately. The S3 backend runs use_lockfile = true,
+so an ordinary plan would write and delete a .tflock object in the state
+bucket. runs/gate1/ and docs/status.md both record that nothing in this repo
+has yet written an object to that bucket, and a capture taken to prove a
+failure should not quietly falsify a claim elsewhere in the record.
+
+### run A: node_image_ocid given an image NAME instead of an OCID ###
+$ terraform plan -input=false -lock=false -var node_image_ocid=ubuntu-24-04-aarch64 [+ the two placeholders]
+
+Planning failed. Terraform encountered an error while generating this plan.
+
+
+Error: open C:\Users\binoy/.oci/config: The system cannot find the path specified.
+
+  with provider["registry.terraform.io/oracle/oci"],
+  on main.tf line 43, in provider "oci":
+  43: provider "oci" {
+
+
+Error: Invalid value for variable
+
+  on variables.tf line 60:
+  60: variable "node_image_ocid" {
+    ├────────────────
+    │ var.node_image_ocid is "ubuntu-24-04-aarch64"
+
+Must be an image OCID, e.g. ocid1.image.oc1.eu-frankfurt-1.aaaa... -- an
+image name is not accepted.
+
+This was checked by the validation rule at variables.tf:64,3-13.
+[exit 1]
+
+### run B: node_image_ocid given an OCID-shaped placeholder ###
+$ terraform plan -input=false -lock=false -var node_image_ocid=ocid1.image.oc1.eu-frankfurt-1.aaaaaaaaplaceholder [+ the two placeholders]
+
+Planning failed. Terraform encountered an error while generating this plan.
+
+
+Error: open C:\Users\binoy/.oci/config: The system cannot find the path specified.
+
+  with provider["registry.terraform.io/oracle/oci"],
+  on main.tf line 43, in provider "oci":
+  43: provider "oci" {
+
+[exit 1]
+
+### what the pair establishes ###
+A and B differ in one variable value and nothing else. B's output is A's
+minus the validation error, so the rejection in A is the validation rule
+firing on that value -- not a side effect of the missing OCI config, which
+is present in both. ADR 0008's own sentence is the reason this needed a
+capture: a validation nobody has seen reject anything is indistinguishable
+from one that cannot.
+
+The provider error is the blocker itself, reported by Terraform rather than
+asserted in prose: there is no OCI tenancy, so there is no ~/.oci/config.
+It arrives at provider configuration, after the backend and state read have
+already succeeded -- which is why run B produces this error and no other.

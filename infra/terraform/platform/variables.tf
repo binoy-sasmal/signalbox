@@ -47,7 +47,16 @@ variable "ssh_public_key_path" {
 # failure is a loud apply error rather than a silent drift. Find the current
 # value with:
 #
-#   oci compute image list --compartment-id <compartment> #     --operating-system "Canonical Ubuntu" --operating-system-version "24.04" #     --shape VM.Standard.A1.Flex --sort-by TIMECREATED --sort-order DESC
+#   oci compute image list \
+#     --compartment-id '<compartment-ocid>' \
+#     --operating-system "Canonical Ubuntu" \
+#     --operating-system-version "24.04" \
+#     --shape VM.Standard.A1.Flex \
+#     --sort-by TIMECREATED --sort-order DESC
+#
+# Strip the leading `# ` from those six lines to run it. That the six flags
+# survive the shell's own tokenisation is verified, not asserted:
+# runs/gate2/refresh-command-parse.txt.
 variable "node_image_ocid" {
   description = "OCID of the Canonical Ubuntu 24.04 aarch64 image for VM.Standard.A1.Flex in eu-frankfurt-1. Pinned so the Gate 2 and Gate 9 drills repeat on one image; refreshed deliberately. See ADR 0008."
   type        = string

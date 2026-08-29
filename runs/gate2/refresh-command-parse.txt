@@ -1,0 +1,71 @@
+### environment ###
+captured_at: 2026-08-29T21:49:18Z
+commit: 0f8fbe048c151c088db387752007581083979093  (plus the working-tree change to
+        infra/terraform/platform/variables.tf that this capture verifies)
+GNU bash, version 5.2.26(1)-release (x86_64-pc-msys)
+
+### what this is ###
+Review 7 F4: the image-refresh command in variables.tf carried embedded '#'
+characters mid-line, so a shell would not see the flags after the first one.
+The fix splits it across comment lines. This file is the fix verified by
+running it through a shell, not by reading it.
+
+Method: the six comment lines are extracted from variables.tf by program,
+their leading '#' is stripped, and the result is sourced with 'oci' replaced
+by a shim that prints the argv the shell actually built. No OCI call is made
+and no OCI CLI is installed here; what is under test is the shell's
+tokenisation of the comment, which is the only thing that was broken.
+
+### the command, as extracted from variables.tf ###
+   oci compute image list \
+     --compartment-id '<compartment-ocid>' \
+     --operating-system "Canonical Ubuntu" \
+     --operating-system-version "24.04" \
+     --shape VM.Standard.A1.Flex \
+     --sort-by TIMECREATED --sort-order DESC
+
+### bash -n (syntax only) ###
+[exit 0] -- no output means it parses
+
+### tokenisation: what the shell hands the oci binary ###
+argc=15
+  argv[1]=compute
+  argv[2]=image
+  argv[3]=list
+  argv[4]=--compartment-id
+  argv[5]=<compartment-ocid>
+  argv[6]=--operating-system
+  argv[7]=Canonical Ubuntu
+  argv[8]=--operating-system-version
+  argv[9]=24.04
+  argv[10]=--shape
+  argv[11]=VM.Standard.A1.Flex
+  argv[12]=--sort-by
+  argv[13]=TIMECREATED
+  argv[14]=--sort-order
+  argv[15]=DESC
+[exit 0] -- 15 tokens: all six flags present, both quoted values intact
+
+### negative control 1: the form committed in 696959f, verbatim ###
+./old_form.sh: line 1: syntax error near unexpected token `newline'
+./old_form.sh: line 1: `   oci compute image list --compartment-id <compartment> #     --operating-system "Canonical Ubuntu" --operating-system-version "24.04" #     --shape VM.Standard.A1.Flex --sort-by TIMECREATED --sort-order DESC'
+[exit 2]
+
+### negative control 2: same line, placeholder quoted ###
+Control 1 dies on '<compartment>', which bash reads as a redirection whose
+target is eaten by the following '#'. Quoting the placeholder removes that
+and exposes the failure F4 was actually about:
+argc=5
+  argv[1]=compute
+  argv[2]=image
+  argv[3]=list
+  argv[4]=--compartment-id
+  argv[5]=<compartment>
+[exit 0] -- 5 tokens of 15. Everything from --operating-system onward is gone.
+
+### one correction to F4, from this capture ###
+F4 predicted the old line would 'list every image in the compartment
+unfiltered and unsorted'. It would not: as committed it is a bash syntax
+error and runs nothing at all (control 1). The cause F4 named is exactly
+right and the consequence was one step milder than the truth. Recorded
+because a capture that only confirmed the prediction would be worth less.

@@ -131,7 +131,11 @@ first failure mode is the one this repo consistently prefers.
 **Accepted cost: the refresh is a known maintenance task.** Canonical publishes new
 24.04 builds and Oracle eventually retires old ones, so the pin goes stale on their
 schedule. The refresh command sits next to the variable in `variables.tf`, not only
-here.
+here - **and from `696959f` until now it was not runnable.** Embedded `#` characters mid-line
+made a shell drop every flag after the first; review 7's F4. The mitigation *is* the
+accepted cost, so a mitigation nobody had run was the cost being unpaid. It is now
+split across comment lines and verified by tokenising it rather than by reading it:
+[`runs/gate2/refresh-command-parse.txt`](../../runs/gate2/refresh-command-parse.txt).
 
 **No default, and that is not the same as unpinned.** The value has never been
 observed: there is no tenancy, and an image OCID is region-specific, so committing
@@ -155,11 +159,18 @@ rather than a filter.
   after the Decision 4 reversal: `terraform fmt -check` clean, `init` successful
   against the real S3 backend, `validate` successful, and `plan` failing at
   `open ~/.oci/config: The system cannot find the path specified` - which is the
-  blocker itself, reported by Terraform rather than asserted here.
+  blocker itself, reported by Terraform rather than asserted here. The `plan` failure
+  is captured in
+  [`runs/gate2/terraform-plan-blocked.txt`](../../runs/gate2/terraform-plan-blocked.txt);
+  the static checks are in [`runs/gate1/`](../../runs/gate1/) and in CI.
 - **The image OCID validation was checked adversarially, not assumed.** `plan` with
   `node_image_ocid=ubuntu-24-04-aarch64` returns *Invalid value for variable* against
-  `variables.tf` line 51. A validation nobody has seen reject anything is
-  indistinguishable from one that cannot.
+  the validation rule in `variables.tf`. A validation nobody has seen reject anything is
+  indistinguishable from one that cannot - **and for one commit this ADR was making that
+  argument about an observation it had not captured.** Review 7's F2. Both runs are now
+  under [`runs/gate2/`](../../runs/gate2/), as an A/B pair: the same `plan` with an
+  OCID-shaped value produces the provider error and no validation error, so the rejection
+  is the rule firing rather than noise from the missing config.
 - Two claims in PLAN.md section 3 stay unverified and can only be settled by
   provisioning: **Frankfurt A1 capacity**, and **idle reclamation** below 10% CPU and
   network over 7 days. `var.availability_domain_index` exists because of the first -
