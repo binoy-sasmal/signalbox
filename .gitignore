@@ -10,3 +10,12 @@ STOP
 .venv/
 __pycache__/
 *.pyc
+
+# Local Claude Code session settings. Holds machine-absolute interpreter paths
+# and session-scoped scratchpad paths, so it is local state, not project
+# configuration. Ignored rather than left untracked: a repo that claims to
+# rebuild from git gets one accidental `git add -A` away from committing a path
+# that only exists on one machine. Anything here that should be shared gets
+# split into a tracked file deliberately.
+.claude/settings.json
+.claude/settings.local.json
