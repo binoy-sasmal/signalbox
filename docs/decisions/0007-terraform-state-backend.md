@@ -19,30 +19,55 @@ DynamoDB table exists to create, pay for, or forget to destroy.
 **Verified rather than assumed.** `use_lockfile` was introduced in **Terraform
 1.10**, and DynamoDB-based locking is documented as deprecated and slated for
 removal in a future minor version. Checked against HashiCorp's S3 backend
-documentation and release history on 2026-08-29. It requires `s3:GetObject`,
-`s3:PutObject` and `s3:DeleteObject` on the `.tflock` object, not only on the state
-object — an IAM detail that is easy to miss because the lock is a second object
-under a different suffix.
+documentation and release history on 2026-08-29.
+
+**IAM note, for when the policy is narrowed.** `use_lockfile` requires
+`s3:GetObject`, `s3:PutObject` and `s3:DeleteObject` on the **`.tflock` object**,
+not only on the state object. The lock is a second object under a different
+suffix, so a policy written against `.../platform/terraform.tfstate` alone does not
+cover it. `AmazonS3FullAccess` covers it today, which is exactly why this is worth
+writing down: **narrowing the policy to the state bucket without including the
+`.tflock` permissions would break locking silently.** Terraform would keep
+applying, concurrent applies would stop being serialised, and nothing would report
+an error until two runs corrupted each other's state.
 
 Versions pinned exactly, per CLAUDE.md: Terraform `1.16.0`, AWS provider `6.62.0`.
 `.terraform.lock.hcl` is committed; it is the provider pin with hashes.
 
-## Decision 2 — credentials come from the environment, not from the repo
+## Decision 2 — the profile lives in the config, not in the environment
 
-No `profile` argument appears in any backend or provider block. Terraform reads the
-standard AWS credential chain, and `AWS_PROFILE` is documented in the README.
+`profile` is set in the configuration: a variable with default `"signalbox"` in
+`bootstrap`'s provider block, and a literal in `platform`'s backend block.
 
-**Options considered.** Hardcoding `profile = "signalbox"` would make
-`terraform init` work from a fresh clone with no setup, which reads better against
-Gate 1's literal wording. It was rejected because the profile name exists only on
-one machine: Stage 3 runs `terraform plan` under Conftest in CI, where credentials
-arrive by OIDC and a named profile does not exist. Creating a local `[default]`
-profile was rejected for the opposite reason — it makes the repo work by virtue of
-machine state that nothing in the repo records.
+**Reversed on 2026-08-29, deliberately.** The first version of this ADR chose the
+`AWS_PROFILE` environment variable, on the grounds that it keeps the repo
+machine-neutral and works under OIDC in CI. That was overruled for a better
+reason: **`AWS_PROFILE` had already failed to persist once on this machine**, and a
+repo whose headline claim is reproducibility should not depend on a variable that
+has demonstrably not survived a reboot. A value the repo asserts is checkable; a
+value the environment is supposed to carry is not.
 
-**Consequence, stated rather than hidden:** Gate 1's "fresh clone" verification
-requires `AWS_PROFILE` to be set first. That is one environment variable, it is in
-the README, and it is named in the gate evidence rather than glossed over.
+**The tradeoff this accepts, stated plainly.** It couples the configuration to one
+machine's local profile naming. A fresh clone on a machine with differently named
+profiles fails until `var.aws_profile` is overridden. That is a real cost and it is
+accepted because the failure is *loud and immediate* — Terraform says the profile
+does not exist — whereas a missing environment variable fails as `NoCredentials`,
+which is the same error a broken key gives.
+
+**The CI answer is not this.** Stage 3 runs `terraform plan` under Conftest, where a
+named profile does not exist and credentials arrive by OIDC. That path is
+**unverified** — [ADR 0001](0001-terraform-apply-path.md) already flags OIDC as
+verify-don't-assume — and it is not settled here. When it is, `var.aws_profile`
+gains an empty default or a CI-specific override, and `platform`'s backend needs a
+partial configuration, because of the constraint below.
+
+**A backend block cannot take a variable.** From Terraform's backend documentation:
+*"A backend block cannot refer to named values (like input variables, locals, or
+data source attributes)."* So `bootstrap` gets `var.aws_profile` and `platform`
+gets the literal `"signalbox"`. The asymmetry is forced by Terraform, not chosen,
+and it is the same constraint that duplicates the bucket name. An account
+migration is therefore two edits — the variable default and the backend literal —
+both inside `infra/terraform/`, not a repo-wide find-and-replace.
 
 ## Decision 3 — bootstrap keeps local state, gitignored
 

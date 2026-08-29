@@ -23,11 +23,14 @@ terraform {
 # region, and CLAUDE.md's rule is to hardcode until a second caller exists.
 # eu-central-1 matches the OCI Frankfurt decision in PLAN.md section 3.
 #
-# No `profile` here. Credentials come from the standard AWS credential chain,
-# so this file works unchanged under a named profile locally and under OIDC in
-# CI. Set AWS_PROFILE before running -- see README.md.
+# `profile` is set from a variable rather than read from AWS_PROFILE. A repo
+# that claims reproducibility should not depend on an environment variable that
+# has already failed to persist once on this machine. See ADR 0007 for the
+# tradeoff this accepts -- it couples the config to a local profile name, and
+# the CI answer later is OIDC, which ADR 0001 flags as verify-don't-assume.
 provider "aws" {
-  region = "eu-central-1"
+  region  = "eu-central-1"
+  profile = var.aws_profile
 }
 
 resource "aws_s3_bucket" "state" {

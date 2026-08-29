@@ -252,6 +252,30 @@ watch for is a value-parsing exemption, not a logic error: the numeric exemption
 substring match, the angle-bracket value class, and now the suffix allow-list all failed the same
 way. When a check exempts something, the question is what else satisfies the exemption.
 
+**A predicate shared between redaction and gating is wrong by construction.**
+Recorded 2026-08-29, at Gate 1, as a general lesson rather than the bug that produced it.
+
+`is_auth_param` decides both what the probe redacts and what the gate rejects. Those two
+uses have *opposite* cost asymmetries, and no single tuning is right for both:
+
+| | over-matching costs | under-matching costs |
+|---|---|---|
+| **Redacting** output | nothing — a redacted non-secret is still readable | a live key in git |
+| **Gating** a commit | a blocked legitimate change, and pressure toward `--no-verify` | a live key in git |
+
+The allow-list's own comment — *"deliberately broad: over-redacting a manifest costs
+nothing"* — is correct for the first row and false for the second. It was written for the
+redactor and inherited by the gate without anyone deciding it should be.
+
+It surfaced when the gate rejected `key = "platform/terraform.tfstate"`, Terraform's S3
+backend argument for the state object path. Not a wrong rule: a rule tuned for the wrong
+caller. The fix is a gate-local narrowing (`is_auth_key_for_gate`), leaving redaction broad.
+
+**The transferable form:** when one predicate serves both a *sanitiser* and a *gate*, split
+it before the first false positive, not after. The sanitiser wants recall, the gate wants
+precision, and a gate that cries wolf teaches people to route around it — which this repo
+already argues elsewhere and then did to itself.
+
 ## Consequences
 
 - `header_timestamp_trust` and the dedup key both become tenant schema facts derived from measured

@@ -25,16 +25,20 @@ no ingest service and no running system. See [`docs/status.md`](docs/status.md).
 
 ## AWS credentials
 
-Terraform reads the standard AWS credential chain. Nothing in this repo names a
-profile, so that a fresh clone works the same way locally and in CI.
+The profile is in the configuration, not the environment — see
+[ADR 0007](docs/decisions/0007-terraform-state-backend.md) for why, and for what it
+costs. **You do not need to set `AWS_PROFILE`.**
+
+The profile is named `signalbox` and must exist in your local AWS config. Check it:
 
 ```sh
-export AWS_PROFILE=signalbox      # PowerShell: $env:AWS_PROFILE = "signalbox"
-aws sts get-caller-identity       # expect .../user/signalbox-terraform
+aws sts get-caller-identity --profile signalbox   # expect .../user/signalbox-terraform
 ```
 
-If this returns `NoCredentials`, or an ARN ending in `:root`, stop and fix it
-before running Terraform.
+An ARN ending in `:root` means the wrong credentials are in that profile. On a
+machine using different profile names, override `var.aws_profile` for `bootstrap`
+and edit the backend block in `infra/terraform/platform/main.tf` — a backend block
+cannot take a variable.
 
 ## Terraform state
 

@@ -16,10 +16,16 @@ terraform {
   #
   # Requires s3:GetObject, s3:PutObject and s3:DeleteObject on the .tflock
   # object, not only on the state object.
+  # `profile` is a literal here and a variable in ../bootstrap. That asymmetry
+  # is forced, not chosen: "A backend block cannot refer to named values (like
+  # input variables, locals, or data source attributes)" -- Terraform backend
+  # documentation. The same constraint is why `bucket` is duplicated rather
+  # than shared. ADR 0007 records both.
   backend "s3" {
     bucket       = "signalbox-tfstate-215573083789"
     key          = "platform/terraform.tfstate"
     region       = "eu-central-1"
+    profile      = "signalbox"
     use_lockfile = true
   }
 }
