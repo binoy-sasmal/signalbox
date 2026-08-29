@@ -44,6 +44,11 @@ diff, so anything persuasive in it arrives as framing rather than as evidence.
   full under *Findings in full*, below the rows. A row carrying only a count is a
   finding waiting to be lost — see `CLAUDE.md`, and see F3–F7/F9–F10, which were.
 - **Notes** — one line. For `ESCALATE`, which halt condition fired.
+- **A `/review` invocation that produces no adjudication is not a row.** It is recorded in
+  `docs/status.md` instead. Every row here carries its findings in full, so a row recording
+  nothing would be the first to record nothing and would dilute what the others mean. This
+  covers an invocation that returned no verdict at all — a quota or harness failure. A review
+  that ran and halted did return a verdict, and keeps its row.
 
 ## Log
 

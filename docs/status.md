@@ -112,7 +112,7 @@ is now an observed cost rather than an abstract one.
 ## Next
 
 **Gate 2** (Terraform: OCI cloud floor), `docs/PLAN.md` section 7.
-**Configuration written and validated. NOT passed — blocked on an OCI account.**
+**Configuration written and validated. NOT passed — blocked on tenancy creation.**
 
 Observed so far: `terraform fmt -check` clean, `init` successful against the real
 S3 backend, `validate` successful, and `plan` failing at `open ~/.oci/config: The system
@@ -122,6 +122,24 @@ here. The static checks now also run in CI on every push
 a local claim. The gate's actual verification — *"destroy then apply produces a working
 SSH-able node. Twice. With no manual step"* — has not run and cannot until a tenancy
 exists. Decisions in [ADR 0008](decisions/0008-oci-cloud-floor.md).
+
+**The tenancy does not exist, and the reason is not known to us.** An OCI account signup
+was **rejected on 2026-08-29**. Oracle returned their generic *"unable to complete your
+sign up"* response, which does not name the check that failed. A support ticket is open;
+expect days rather than hours. **The cause is recorded as unknown.** Nothing here should
+be read as a diagnosis — no message from Oracle identified a card, an address, an identity
+check or a capacity limit, so naming one would be exactly the plausible-sounding invention
+this repo's evidence rules exist to prevent.
+
+**Decision deadline: 2026-09-05.** If the ticket is unresolved by then, the human decides
+between continuing to wait and falling back to **Hetzner CX32 (~EUR 7/month)**, already
+carried in `CLAUDE.md` as the settled fallback.
+[ADR 0008](decisions/0008-oci-cloud-floor.md) holds the reasoning for choosing OCI, so
+taking the fallback would be a **recorded reversal with its cost stated** — an amendment
+written against that reasoning, and a monthly bill where the Always Free allowance had
+none — not a retreat. **No Hetzner configuration is written, and none should be** until
+that decision is taken; writing it now would be scaffolding ahead of a choice the human
+has not made.
 
 **Discharged early:** the Always Free allowance re-verification that `PLAN.md`
 section 3 requires at this gate. Unchanged on 2026-08-29 — [`metrics.md`](metrics.md).
@@ -145,6 +163,15 @@ narrowed expression predicate in `72506e4`. It ships with adversarial tests veri
 making them fail, which is the standard the new hard rule in `CLAUDE.md` now requires, but
 nobody who did not write it has read it. That is the gap to state at the Gate 2
 boundary.
+
+**A review of that range was invoked on 2026-08-29 and did not run.** `/review
+874e808..HEAD` returned a session-quota error in place of a verdict: no adjudication, no
+rubric, no findings, nothing to report. It is recorded here because an unreviewed range
+looks identical whether a review was never asked for or was asked for and could not
+execute, and nothing else in this repo tells those two apart. Whether it also belongs in
+[`reviews/log.md`](reviews/log.md) as a row is left to the human — the tally there counts
+invocations and this was one, but it produced nothing to log. The range is unreviewed
+either way.
 
 Gate 2 re-verifies the OCI Always Free allowance before provisioning — `PLAN.md`
 section 3 marks that number as the one most likely to have moved.
