@@ -192,6 +192,39 @@ def walk_json(node, path: str = ""):
             yield from walk_json(value, f"{path}[{index}]")
 
 
+# Config-key names the GATE does not treat as auth-shaped, though is_auth_param
+# does. This is a gate-only narrowing; allowlist.is_auth_param is unchanged.
+#
+# Why the two must differ. is_auth_param is shared with the probe's
+# redact_query, and its own comment says it is "deliberately broad:
+# over-redacting a manifest costs nothing". That is right for redaction and
+# wrong here, because the two callers have opposite cost asymmetries. Redacting
+# a non-secret costs nothing. Rejecting a legitimate commit costs a blocked
+# change and pushes people toward --no-verify, which is the exact failure the
+# CI half of this gate exists to prevent.
+#
+# `key` unqualified is the case that forced it: Terraform's S3 backend names
+# its state object path `key`, so `key = "platform/terraform.tfstate"` is a
+# path, not a credential. The exemption is on the EXACT name, so every
+# qualified form still fires -- api_key, secret_key, access_key, private_key,
+# aws_secret_access_key -- because those match on a substring that is still
+# live.
+#
+# Scoped to config keys only. The URL query-parameter path does NOT use this:
+# `?key=...` is a standard API-key idiom, and some transit APIs authenticate
+# exactly that way, which is the reason endpoints are stored split at all.
+#
+# Known cost, recorded in docs/limits.md: an unqualified `key: <credential>`
+# now passes the gate. In this repo secrets are `*_ref` pointers by schema, so
+# that shape should not arise -- but "should not arise" is not "cannot".
+GATE_KEY_NAME_EXEMPTIONS = frozenset({"key"})
+
+
+def is_auth_key_for_gate(name: str) -> bool:
+    """is_auth_param, minus config-key names the gate must not reject."""
+    return name.lower() not in GATE_KEY_NAME_EXEMPTIONS and is_auth_param(name)
+
+
 def check_json_types(path: Path, raw: str) -> list[Finding] | None:
     """Type-based auth-key check for JSON, where types are unambiguous.
 
@@ -211,7 +244,7 @@ def check_json_types(path: Path, raw: str) -> list[Finding] | None:
     lines = raw.splitlines()
     findings: list[Finding] = []
     for json_path, key, value in walk_json(document):
-        if not isinstance(key, str) or not is_auth_param(key) or not isinstance(value, str):
+        if not isinstance(key, str) or not is_auth_key_for_gate(key) or not isinstance(value, str):
             continue
         # Same pointer-suffix exemption the line scanner applies. `auth_ref`
         # names a SOPS secret; it is the pointer, not the thing pointed at. The
@@ -383,7 +416,7 @@ def check_text_file(path: Path, auth_key_rule: bool = True) -> list[Finding]:
         match = re.match(r"""\s*["']?([A-Za-z0-9_.\-]+)["']?\s*[:=]\s*(.+?)\s*$""", line)
         if match and auth_key_rule:
             name, value = match.group(1), match.group(2).strip().strip("\"'")
-            if not is_auth_param(name) or not value:
+            if not is_auth_key_for_gate(name) or not value:
                 continue
             benign = (
                 is_placeholder(value)

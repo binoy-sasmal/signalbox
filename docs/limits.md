@@ -166,6 +166,36 @@ could never have failed on this. `TestTheRulesRunOnEveryTrackedSuffix` now plant
 credential under every suffix present in the tree and requires each to be caught.
 **"Scanned" without "and the relevant rules ran" is not coverage.**
 
+### A third gap, narrower and accepted: unqualified `key`
+
+Opened deliberately 2026-08-29, at Gate 1, the first time real Terraform met this
+gate. Terraform's S3 backend names its state object path `key`, so
+`key = "platform/terraform.tfstate"` is a path — and the gate rejected it, because
+`"key"` is a bare substring in `AUTH_PARAM_PATTERNS`.
+
+**The root cause is not a bug, and that is the interesting part.** `is_auth_param`
+is shared by two callers whose cost asymmetries are opposite. Its own comment says
+it is *"deliberately broad: over-redacting a manifest costs nothing"* — true for the
+probe's `redact_query`. In the gate, over-matching blocks a legitimate commit and
+pushes people toward `--no-verify`, which is the failure the CI half of this gate
+exists to prevent. One predicate cannot be tuned for both.
+
+So the gate now has its own narrowing, `is_auth_key_for_gate`, exempting the
+**exact** name `key`. `allowlist.is_auth_param` is untouched and redaction stays
+broad.
+
+**The hole this opens:** an unqualified `key: <literal credential>` in a config file
+now passes. In this repo secrets are `*_ref` pointers by schema, so the shape should
+not arise — but *should not* is not *cannot*, and it is written here rather than
+left implicit.
+
+**What holds it at that size.** Every qualified form still fires, and widening the
+exemption to substring matching turns 26 tests red, including the numeric,
+placeholder and extensionless suites. Scope is config keys only: the URL
+query-parameter path is deliberately untouched, because `?key=` is a real
+API-key idiom and some transit APIs authenticate exactly that way — which is why
+endpoints are stored split in the first place.
+
 ### Half one stays OPEN: scope
 
 Nothing above changes it. The check still walks tracked files, and an untracked

@@ -514,5 +514,50 @@ class TestTheRulesRunOnEveryTrackedSuffix(GateTestCase):
         )
 
 
+class TestUnqualifiedKeyIsExemptForTheGateOnly(GateTestCase):
+    """`key` alone is a config argument name, not a credential name.
+
+    Terraform's S3 backend calls its state object path `key`, so
+    `key = "platform/terraform.tfstate"` is a path. The gate rejected it on the
+    first real Terraform file written in this repo. is_auth_param is shared
+    with the probe's redact_query, where over-matching is free; in the gate it
+    blocks a legitimate commit and pushes people toward --no-verify.
+
+    The exemption is on the exact name. Everything qualified still fires, and
+    the URL query-parameter path is untouched, because `?key=` really is an
+    API-key idiom.
+    """
+
+    STATE_PATH = "platform/terraform.tfstate"
+
+    def test_terraform_backend_key_passes(self):
+        self.assertClean(self.write(
+            "backend.tf", "  bucket = \"signalbox-tfstate\"", f"  key = \"{self.STATE_PATH}\""))
+
+    def test_the_json_path_agrees(self):
+        """Safety must not depend on which format the value was written in."""
+        self.assertClean(self.write(
+            "values.json", json.dumps({"key": self.STATE_PATH}, indent=2)))
+
+    def test_qualified_names_still_fire(self):
+        for name in ("api_key", "secret_key", "access_key", "private_key",
+                     "aws_secret_access_key", "subscription_key"):
+            with self.subTest(name=name):
+                path = self.write(f"{name}.yaml", f"{name}: {REAL_KEY}")
+                findings, _ = scan([path])
+                self.assertTrue(findings, f"{name} stopped firing -- exemption is too wide")
+
+    def test_the_json_path_still_fires_on_qualified_names(self):
+        path = self.write("values.json", json.dumps({"api_key": REAL_KEY}, indent=2))
+        findings, _ = scan([path])
+        self.assertTrue(findings, "JSON path stopped firing on api_key")
+
+    def test_a_url_query_parameter_named_key_is_still_caught(self):
+        """The exemption is for config keys. `?key=` is how some APIs authenticate."""
+        path = self.write("notes.md", f"    https://example.invalid/feed?key={REAL_KEY}")
+        findings, _ = scan([path])
+        self.assertTrue(findings, "query-parameter path was narrowed; it must not be")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
