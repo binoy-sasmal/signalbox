@@ -34,6 +34,11 @@ diff, so anything persuasive in it arrives as framing rather than as evidence.
 - **Range reviewed** — the git range or working-tree scope given to `/review`,
   verbatim. `working tree + HEAD` when invoked with no argument.
 - **Verdict** — `ACCEPT`, `ACCEPT WITH AMENDMENTS`, `REJECT`, or `ESCALATE`.
+  Prefixed **`VOID`** if the review turned out to have run from a configuration
+  that no longer existed — see the staleness rule in `CLAUDE.md`. VOID is not a
+  fifth verdict: it records that the review was not valid, while the parenthesised
+  original records what it returned. A VOID row counts in neither the review tally
+  nor the rejection tally.
 - **Findings** — count, and the rubric item numbers they fell under. `0` if clean.
 - **Notes** — one line. For `ESCALATE`, which halt condition fired.
 
@@ -41,5 +46,29 @@ diff, so anything persuasive in it arrives as framing rather than as evidence.
 
 | Date | Range reviewed | Verdict | Findings | Notes |
 |---|---|---|---|---|
-| 2026-08-29 | *(self)* `b1626f2..HEAD` — the review agent's own construction | no verdict returned | 8 raised, 7 confirmed | Findings under items 1, 3, 9, 10. One claim (`context: fork` inherits conversation history) checked against the live docs and found wrong. The agent did not emit a VERDICT line, a tally, or the rubric table -- a defect in the agent, recorded here rather than smoothed over. |
-| 2026-08-29 | *(self)* `0419f6b..HEAD` — the seven fixes from review 1 | ESCALATE | 10 raised | Halt under sections 2a and 4.1. F1/F2 are observations of the run itself: the frontmatter hooks and tools allow-list did not apply, and the CLAUDE.md it received was the pre-`c9b7e64` version. Cause is a claim about the harness, correctly marked UNVERIFIED BY ME. F3-F10 stand on repo artefacts and are unfixed. Gap noted by the reviewer: commit `0419f6b` has never been reviewed. |
+| 2026-08-29 | *(self)* `b1626f2..HEAD` — the review agent's own construction | **VOID** (was: no verdict returned) | 8 raised, 7 confirmed | Findings under items 1, 3, 9, 10. One claim (`context: fork` inherits conversation history) checked against the live docs and found wrong. The agent did not emit a VERDICT line, a tally, or the rubric table -- a defect in the agent, recorded here rather than smoothed over. |
+| 2026-08-29 | *(self)* `0419f6b..HEAD` — the seven fixes from review 1 | **VOID** (was: ESCALATE) | 10 raised | Halt under sections 2a and 4.1. F1/F2 are observations of the run itself: the frontmatter hooks and tools allow-list did not apply, and the CLAUDE.md it received was the pre-`c9b7e64` version. Cause is a claim about the harness, correctly marked UNVERIFIED BY ME. F3-F10 stand on repo artefacts and are unfixed. Gap noted by the reviewer: commit `0419f6b` has never been reviewed. |
+
+### Why reviews 1 and 2 are VOID
+
+Both ran in the session that was building the reviewer, and a configuration probe
+on 2026-08-29 established that neither reviewed the configuration it appeared to.
+The probe found the running agent's system prompt missing section 2a — committed
+in `8585810`, before review 2 — and its `CLAUDE.md` still carrying the
+`Gate 0 passed` status block that `c9b7e64` had already moved out. The agent type
+only became registered partway through that session, so review 1 and review 2 did
+not even run from the same configuration as each other.
+
+**Their findings were not acted on**, except F8, which was fixed in `d5d98e5`
+because the defect was verifiable directly in the artefact and did not depend on
+which configuration reported it. F3 to F7 and F9 to F10 remain untouched.
+
+**Kept, not deleted.** A voided review in the record is evidence about the
+harness: it is what established the staleness rule now in `CLAUDE.md`. A deleted
+one is a gap that looks like a stretch where nobody asked for a review, which is
+the failure the log's own limitation section warns about. Same argument as
+keeping this file git-tracked at all.
+
+The verdict column records what the review returned; the VOID marking records
+whether it was from a configuration that existed. Those are different facts and
+the row keeps both.
