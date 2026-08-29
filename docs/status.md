@@ -24,7 +24,32 @@ Update this file when a gate closes. Nothing else should restate it.
 on measured resource grounds**. Findings that outlive the probe:
 [`stage0-findings.md`](stage0-findings.md). Evidence: [`metrics.md`](metrics.md).
 
-**Stage 0 complete. Stage 1 not started.**
+**Gate 1 passed 2026-08-29.** Repo layout and remote state. Verified on the observed
+result the gate names, not on configuration that looked right:
+
+```
+### terraform init - platform (S3 backend) - FRESH CLONE, NO LOCAL STATE ###
+Successfully configured the backend "s3"!
+Terraform has been successfully initialized!
+[exit 0]
+```
+
+The clone was made from the repo with `git clone`, and the only file present under
+`infra/` besides the `.tf` sources was `.terraform.lock.hcl` — no `.terraform/`
+directory and no `.tfstate`. `terraform plan` then round-tripped the backend
+(`No changes.`), and the bucket was confirmed independently through the AWS CLI:
+versioning `Enabled`, all four public-access blocks `true`.
+
+Terraform `1.16.0`, AWS provider `6.62.0`, both pinned exactly; the Terraform
+download was checksum-verified against HashiCorp's published `SHA256SUMS`.
+Decisions in [ADR 0007](decisions/0007-terraform-state-backend.md).
+
+**What is NOT verified.** `use_lockfile = true` is configured and its mechanism was
+confirmed from HashiCorp's documentation, but **concurrent lock behaviour has not
+been observed** — no two Terraform runs have contended for this state. The claim
+"state locking works" rests on documentation, not on evidence from this repo.
+
+**Stage 0 complete. Stage 1 in progress: Gate 1 of 9 passed.**
 
 ## Review machinery — closed 2026-08-29
 
@@ -59,7 +84,18 @@ The review clock restarts at Gate 1.
 
 ## Next
 
-**Gate 1** (repo layout and remote state), `docs/PLAN.md` section 7. Beginning now.
+**Gate 2** (Terraform: OCI cloud floor — VCN, subnet, gateway, route table, NSG,
+compute, block volume), `docs/PLAN.md` section 7. **Not started.**
+
+**Review position for that boundary, stated now so it is not discovered later:**
+**no review has run over Gate 1's work.** The clock restarted at Gate 1 by the
+deliberate-gap decision above, and Gate 1 then closed without one. Its range is
+`38a9542..HEAD` and it includes a second methodology change to the enforced
+credential gate (`f1d0951`, the gate-only `key` exemption) on top of the one already
+inside the unreviewed gap. Two gate changes now sit unreviewed, not one.
+
+Gate 2 re-verifies the OCI Always Free allowance before provisioning — `PLAN.md`
+section 3 marks that number as the one most likely to have moved.
 
 Carry into Stage 1: **a measurement must declare its preconditions and stand down when they
 fail** (ADR 0004 section 8, five worked examples). This applies directly to Gate 8's SLIs —
