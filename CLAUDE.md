@@ -108,6 +108,14 @@ while the log had four and named one of them the first valid review. Nothing in 
 repo detects that. Both are tracked prose, each one reads as correct on its own, and the
 contradiction is only visible to someone who opens both.
 
+**A review's findings go into the log in full.** Not a count, not the rubric item numbers,
+not a pointer to the conversation — the finding itself: what it is, where, why it matters,
+and what would close it. `docs/reviews/log.md` is the record. The session that produced it
+is not, and will not be there later. Voided review 2's F3–F7 and F9–F10 are permanently
+unrecoverable for precisely this reason: they were logged as "10 raised" and their text
+lived only in a transcript that no longer exists. Re-review can regenerate what is still
+true; it cannot recover what was said. **Anything not in the repo does not exist.**
+
 `/review` runs the `gate-reviewer` agent in an isolated context that cannot see the
 conversation. It reads artefacts, not your account of them — so do not summarise the work to
 it, and do not treat its ACCEPT as agreement with your reasoning. It never saw your reasoning.

@@ -40,6 +40,9 @@ diff, so anything persuasive in it arrives as framing rather than as evidence.
   original records what it returned. A VOID row counts in neither the review tally
   nor the rejection tally.
 - **Findings** — count, and the rubric item numbers they fell under. `0` if clean.
+  The count is an index, not the record. The findings themselves are written out in
+  full under *Findings in full*, below the rows. A row carrying only a count is a
+  finding waiting to be lost — see `CLAUDE.md`, and see F3–F7/F9–F10, which were.
 - **Notes** — one line. For `ESCALATE`, which halt condition fired.
 
 ## Log
