@@ -1,0 +1,45 @@
+captured_at: 2026-08-29T15:22:23Z
+aws-cli: aws-cli/2.36.33 Python/3.14.6 Windows/11 exe/AMD64
+bucket: signalbox-tfstate-215573083789   profile: signalbox   region: eu-central-1
+
+$ aws s3api get-bucket-versioning --bucket $BUCKET --profile signalbox
+{
+    "Status": "Enabled"
+}
+
+$ aws s3api get-public-access-block --bucket $BUCKET --profile signalbox
+{
+    "PublicAccessBlockConfiguration": {
+        "BlockPublicAcls": true,
+        "IgnorePublicAcls": true,
+        "BlockPublicPolicy": true,
+        "RestrictPublicBuckets": true
+    }
+}
+
+$ aws s3api get-bucket-location --bucket $BUCKET --profile signalbox
+{
+    "LocationConstraint": "eu-central-1"
+}
+
+$ aws s3api get-bucket-encryption --bucket $BUCKET --profile signalbox
+{
+    "ServerSideEncryptionConfiguration": {
+        "Rules": [
+            {
+                "ApplyServerSideEncryptionByDefault": {
+                    "SSEAlgorithm": "AES256"
+                },
+                "BucketKeyEnabled": false,
+                "BlockedEncryptionTypes": {
+                    "EncryptionType": [
+                        "SSE-C"
+                    ]
+                }
+            }
+        ]
+    }
+}
+
+$ aws s3api list-objects-v2 --bucket $BUCKET --profile signalbox --query 'Contents[].{Key:Key,Size:Size}'
+null

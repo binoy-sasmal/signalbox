@@ -1,0 +1,14 @@
+captured_at: 2026-08-29T15:22:54Z
+
+### terraform fmt -check -recursive  (repo root, from the fresh clone) ###
+[exit 0] -- no output means every file is already formatted
+
+### terraform init -backend=false && validate -- bootstrap ###
+Success! The configuration is valid.
+
+[exit 0]
+
+### terraform validate -- platform (already initialised above, real backend) ###
+Success! The configuration is valid.
+
+[exit 0]

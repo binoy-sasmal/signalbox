@@ -36,9 +36,23 @@ Terraform has been successfully initialized!
 
 The clone was made from the repo with `git clone`, and the only file present under
 `infra/` besides the `.tf` sources was `.terraform.lock.hcl` — no `.terraform/`
-directory and no `.tfstate`. `terraform plan` then round-tripped the backend
-(`No changes.`), and the bucket was confirmed independently through the AWS CLI:
-versioning `Enabled`, all four public-access blocks `true`.
+directory and no `.tfstate`. The bucket was confirmed independently through the AWS
+CLI: versioning `Enabled`, all four public-access blocks `true`.
+
+**Re-observed and committed as an artefact 2026-08-29** after review 6's F3, which
+found this narrative was the only record of the gate. [`runs/gate1/`](../runs/gate1/)
+holds program output redirected to disk, not text retyped from a terminal: a fresh
+clone, `init` against the real S3 backend downloading the provider from scratch, the
+`s3api` responses, and `fmt -check` plus `validate` for both configurations.
+
+**One claim was narrowed by that capture.** This section previously said `terraform
+plan` "round-tripped the backend (`No changes.`)". `list-objects-v2` shows the bucket
+is **empty** — the platform configuration has never been applied, so there is no state
+object to round-trip. What was demonstrated is read access and correct backend wiring.
+Nothing in this repo has yet written an object to that bucket; the first `apply` will
+be the first write. The `plan` output itself is no longer reproducible either, because
+Gate 2 added resources to the same configuration — it was never part of the gate's
+criterion, which is `init` from a fresh clone.
 
 Terraform `1.16.0`, AWS provider `6.62.0`, both pinned exactly; the Terraform
 download was checksum-verified against HashiCorp's published `SHA256SUMS`.

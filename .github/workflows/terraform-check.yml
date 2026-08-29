@@ -1,0 +1,63 @@
+# Terraform's static checks, enforced.
+#
+# Added 2026-08-29 after review 6's F3 and its rubric item 9 partial: every Gate 1
+# and Gate 2 result up to that point was a local, unrepeatable run on one machine.
+# `fmt -check`, `init` and `validate` now run on every push and pull request, so a
+# configuration that only parses on the builder's laptop is a red build.
+#
+# WHAT THIS JOB DELIBERATELY DOES NOT DO: initialise the real S3 backend. That needs
+# AWS credentials in this repository's Actions, which is a decision nobody has made
+# and which Gate 1 does not require. So `init` runs with `-backend=false` and the
+# backend half of Gate 1's criterion stays a local, credentialed observation --
+# recorded as an artefact under `runs/gate1/` rather than only in narrative.
+# Read that directory before quoting this job as covering Gate 1.
+#
+# Terraform is fetched and checksum-verified rather than installed by an action, so
+# the version is pinned exactly (CLAUDE.md) without a second action SHA to track.
+# The expected digest is hardcoded here rather than read from the downloaded
+# SHA256SUMS file, which an attacker able to serve the zip could also serve.
+
+name: terraform-check
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  TF_VERSION: 1.16.0
+  TF_SHA256: 41d05b927aa174f15d1228c4eba832a323b716c68b415ef5a00179f46cc602d3
+
+jobs:
+  terraform-static-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Install Terraform ${{ env.TF_VERSION }}, checksum-verified
+        run: |
+          set -euo pipefail
+          zip="terraform_${TF_VERSION}_linux_amd64.zip"
+          curl -fsSL -O "https://releases.hashicorp.com/terraform/${TF_VERSION}/${zip}"
+          echo "${TF_SHA256}  ${zip}" | sha256sum -c -
+          unzip -q "$zip" -d /usr/local/bin
+          terraform version
+
+      # Formatting first: it is the check most likely to fail and the cheapest.
+      - name: terraform fmt -check
+        run: terraform fmt -check -recursive -diff infra/terraform
+
+      # -backend=false throughout. See the header: no AWS credentials here.
+      - name: terraform init and validate -- bootstrap
+        run: |
+          set -euo pipefail
+          terraform -chdir=infra/terraform/bootstrap init -backend=false -input=false
+          terraform -chdir=infra/terraform/bootstrap validate
+
+      - name: terraform init and validate -- platform
+        run: |
+          set -euo pipefail
+          terraform -chdir=infra/terraform/platform init -backend=false -input=false
+          terraform -chdir=infra/terraform/platform validate
