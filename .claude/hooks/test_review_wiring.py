@@ -188,7 +188,11 @@ class TestHookCommandBehaviour(unittest.TestCase):
         # module's docstring stops meaning anything and the live-wiring check
         # silently becomes a no-op -- a test that cannot fire, checking a hook
         # that cannot fire.
-        probe = 'git -C "%s" diff' % PROJECT_DIR
+        # Forward slashes deliberately. A Windows PROJECT_DIR carries
+        # backslashes, which the character allow-list refuses first, so the
+        # probe would still be denied but for the wrong reason -- and would then
+        # prove nothing about -C on the platform where the reviewer runs.
+        probe = 'git -C "%s" diff' % PROJECT_DIR.replace("\\", "/")
         payload = json.dumps({"tool_input": {"command": probe}})
         result = run_hook(self.command, payload, PROJECT_DIR)
         self.assertEqual(self._decision(result), "deny")
