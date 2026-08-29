@@ -273,6 +273,40 @@ It also corrected a wrong finding — see below.
 
 ---
 
+## Stage 1 — platform floor
+
+### OCI Always Free allowance — re-verified 2026-08-29 at Gate 2
+
+`PLAN.md` section 3 records the June 2026 halving and instructs re-verification at
+provisioning, calling it "the number most likely to move under us again". Checked
+against Oracle's primary page on 2026-08-29, at the start of Gate 2.
+
+**Result: unchanged.** All three figures match what `PLAN.md` already records, verbatim.
+
+| Resource | Allowance, quoted | Matches PLAN? |
+|---|---|---|
+| `VM.Standard.A1.Flex` | "the first 1,500 OCPU hours and 9,000 GB hours per month" — "For Always Free tenancies, this is equivalent to 2 OCPUs and 12 GB of memory" | yes |
+| Block Volume | "a total of 200 GB of Block Volume storage, and five volume backups" — "apply to both boot volumes and block volumes combined" | yes |
+| Object Storage (Always-Free-only) | "20 GB of combined Standard tier, Infrequent Access tier, and Archive tier data"; "50,000 Object Storage API requests per month" | yes |
+
+*Source:* [Oracle — Always Free Resources](https://docs.oracle.com/en-us/iaas/Content/FreeTier/freetier_topic-Always_Free_Resources.htm).
+*Checked:* 2026-08-29.
+
+**The arithmetic worth carrying.** 1,500 OCPU-hours ÷ 730 hours = **2.05 OCPU**, and
+9,000 GB-hours ÷ 730 = **12.3 GB**. The monthly allowance is sized for exactly one
+2-OCPU / 12 GB instance running continuously, with no room for a second. The single-node
+limitation in [`limits.md`](limits.md) is therefore not a simplification we chose — it is
+what the allowance pays for. A second node means either halving the first or leaving the
+free tier.
+
+Still unverified at this point, both flagged in `PLAN.md` section 3 and neither observable
+before provisioning:
+
+- **A1 capacity in Frankfurt.** Community reports say it provisions quickly where US
+  regions do not. No primary source. Folklore until observed.
+- **Idle reclamation** (below 10% CPU *and* 10% network over 7 days). Source not recorded.
+  To be verified by observation, or the claim dropped.
+
 ### Findings
 
 #### Documented cadence is unverified in either direction — and so is a short measurement
