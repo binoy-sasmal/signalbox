@@ -9,6 +9,13 @@
 terraform {
   required_version = "1.16.0"
 
+  required_providers {
+    oci = {
+      source  = "oracle/oci"
+      version = "8.29.0"
+    }
+  }
+
   # State locking is native to S3 via `use_lockfile`, which uses S3 conditional
   # writes. Introduced in Terraform 1.10; DynamoDB-based locking is deprecated
   # and slated for removal. This is what makes PLAN.md's "no DynamoDB lock
@@ -28,4 +35,12 @@ terraform {
     profile      = "signalbox"
     use_lockfile = true
   }
+}
+
+# Credentials come from ~/.oci/config, which holds the API signing key. Only the
+# PROFILE NAME lives in this repo -- the same split as the AWS decision in ADR
+# 0007, and the reason no SOPS machinery is needed at Gate 2. See ADR 0008.
+provider "oci" {
+  config_file_profile = var.oci_profile
+  region              = "eu-frankfurt-1"
 }

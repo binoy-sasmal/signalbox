@@ -22,6 +22,7 @@ no ingest service and no running system. See [`docs/status.md`](docs/status.md).
 |---|---|---|
 | Terraform | `1.16.0` | Exact pin in `required_version`. `use_lockfile` needs ≥ 1.10. |
 | AWS CLI | v2 | Credentials only; Terraform does not shell out to it. |
+| OCI account | — | Tenancy plus an API signing key in `~/.oci/config`. **Not yet created.** |
 
 ## AWS credentials
 
@@ -57,3 +58,29 @@ in. It cannot store its own state there, so its state is local and gitignored.
 cd infra/terraform/bootstrap && terraform init && terraform apply
 cd ../platform             && terraform init
 ```
+
+## OCI credentials
+
+The same split as AWS, for a stronger reason: OCI's secret is a real private key.
+Only the **profile name** lives in this repo. The key stays in `~/.oci/config`.
+
+```sh
+oci setup config     # writes ~/.oci/config and the API key. Profile: signalbox
+```
+
+`platform` needs two values that are deliberately not committed:
+
+| Variable | Where it comes from | Why it is not in the repo |
+|---|---|---|
+| `compartment_ocid` | Your tenancy, or a compartment OCID | Account-specific. |
+| `ssh_ingress_cidr` | Your public address, as `<addr>/32` | A home IP. Not a credential, but personal, and it changes. |
+
+The SSH **public** key is read from `~/.ssh/signalbox_ed25519.pub` by default. Only
+the public half ever leaves your machine and nothing is committed. Generate one:
+
+```sh
+ssh-keygen -t ed25519 -f ~/.ssh/signalbox_ed25519 -C signalbox
+```
+
+See [ADR 0008](docs/decisions/0008-oci-cloud-floor.md) for why each of these is
+where it is.
