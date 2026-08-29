@@ -13,7 +13,10 @@ hooks:
     - matcher: "Bash"
       hooks:
         - type: command
-          command: "sh \"${CLAUDE_PROJECT_DIR}/.claude/hooks/review-readonly-guard.sh\""
+          command: >-
+            sh "${CLAUDE_PROJECT_DIR}/.claude/hooks/review-readonly-guard.sh" ||
+            { printf '%s' '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"gate-reviewer is read-only: the guard did not dispatch, so the command is refused"}}';
+            exit 2; }
 ---
 
 # Standing

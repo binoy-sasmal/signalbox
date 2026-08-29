@@ -189,8 +189,31 @@ class TestWritingFlags(unittest.TestCase):
     def test_git_diff_output_spaced(self):
         self.assertIsNotNone(guard.evaluate("git diff --output leak.txt"))
 
-    def test_short_o(self):
-        self.assertIsNotNone(guard.evaluate("git log -o leak.txt"))
+    def test_denial_is_scoped_by_command_not_context_free(self):
+        # A context-free flag list denied these three, none of which write:
+        # `git log -i` is case-insensitive grep, `git ls-files -o` is --others,
+        # and `git diff -O` *reads* an orderfile. Scoping by (command,
+        # subcommand) is what lets them through while --output stays denied.
+        self.assertIsNone(guard.evaluate("git log -i --grep=fix"))
+        self.assertIsNone(guard.evaluate("git ls-files -o"))
+        self.assertIsNone(guard.evaluate("git diff -O orderfile"))
+
+    def test_batch_flags_that_block_are_denied(self):
+        # These read object names from stdin and hang until EOF. A hanging
+        # reviewer is a stalled gate.
+        self.assertIsNotNone(guard.evaluate("git cat-file --batch"))
+        self.assertIsNotNone(guard.evaluate("git cat-file --batch-check"))
+        self.assertIsNotNone(guard.evaluate("git cat-file --batch-all-objects"))
+        # The non-streaming forms stay usable.
+        self.assertIsNone(guard.evaluate("git cat-file -p HEAD"))
+
+    def test_tail_is_not_an_allowed_command(self):
+        # Removed outright rather than allowed-with--f-denied: short flags
+        # bundle, so `tail -fn5` would need bundle parsing, which is new
+        # value-parsing surface for no gain. Read with an offset replaces it.
+        self.assertIsNotNone(guard.evaluate("tail -f runs/run2/run.json"))
+        self.assertIsNotNone(guard.evaluate("tail -20 runs/run2/run.json"))
+        self.assertIsNotNone(guard.evaluate("tail -fn5 runs/run2/run.json"))
 
     def test_flag_matching_is_not_substring(self):
         # The placeholder bypass in this repo was a substring match. Assert the
@@ -297,12 +320,41 @@ class TestLegitimateInspectionStillWorks(unittest.TestCase):
             "git log --format=%H -5",
             "cat docs/metrics.md",
             "head -50 runs/run2/observations.jsonl",
-            "tail -20 runs/run2/run.json",
             "wc -l docs/PLAN.md",
             "ls -la runs",
         ]:
             with self.subTest(command=command):
                 self.assertAllowed(command)
+
+
+class TestAcceptedLimitations(unittest.TestCase):
+    """Capability knowingly given up, asserted so it stays a decision.
+
+    Braces and parentheses are refused everywhere rather than permitted in the
+    positions where they are legitimate. The alternative -- a positional
+    exemption inside the exemption mechanism, whose correctness would rest on
+    shlex's quote handling agreeing with the executing shell's -- is the
+    value-parsing hole class this guard exists to avoid.
+
+    These assertions exist so the loss is visible in the suite rather than
+    discovered mid-review, and so re-permitting them is a deliberate edit here.
+    """
+
+    def test_reflog_revisions_are_refused(self):
+        self.assertIsNotNone(guard.evaluate("git show HEAD@{1}"))
+        self.assertIsNotNone(guard.evaluate("git diff @{upstream}...HEAD"))
+
+    def test_grep_patterns_containing_parentheses_are_refused(self):
+        # Matters here specifically: every commit subject in this repo uses the
+        # `type(scope):` form, so this is a real loss, not a theoretical one.
+        self.assertIsNotNone(guard.evaluate("git log --grep=fix(probe)"))
+
+    def test_what_survives_the_limitation(self):
+        # The loss is bounded. Plain revisions, ranges, ~ and ^ and paren-free
+        # grep patterns all still work.
+        self.assertIsNone(guard.evaluate("git log --grep=fix"))
+        self.assertIsNone(guard.evaluate("git show HEAD~2"))
+        self.assertIsNone(guard.evaluate("git diff HEAD^..HEAD"))
 
 
 if __name__ == "__main__":
