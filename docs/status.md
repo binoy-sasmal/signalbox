@@ -26,8 +26,26 @@ on measured resource grounds**. Findings that outlive the probe:
 
 **Stage 0 complete. Stage 1 not started.**
 
-**Next action is Gate 1** (repo layout and remote state), `docs/PLAN.md` section 7. Do not
-start it without being asked.
+## Review machinery — closed 2026-08-29
+
+Built between Stage 0 and Stage 1, and now settled. The `gate-reviewer` agent and the
+`/review` skill stay. The PreToolUse read-only guard is **removed**: a configuration probe
+established it never fired, and a check that does not run is not enforcement
+([ADR 0006](decisions/0006-reviewer-read-only-enforcement.md)).
+
+What the reviewer's read-only property actually rests on — enforced tool scoping,
+unenforced `Bash`, and restraint — is in [`limits.md`](limits.md), stated at its real size.
+The finding worth carrying: **prompt freshness is not evidence of hook wiring.**
+
+**Review position.** Three rows in [`reviews/log.md`](reviews/log.md). Two are VOID. The
+third is the probe, which adjudicated no work. **No valid review has run against any work
+in this repo.** `0419f6b` onward, the guard removal included, has never been validly
+reviewed — and the removal cannot be reviewed from the session that made it, because it
+changes `.claude/agents/`.
+
+## Next
+
+**Gate 1** (repo layout and remote state), `docs/PLAN.md` section 7. Beginning now.
 
 Carry into Stage 1: **a measurement must declare its preconditions and stand down when they
 fail** (ADR 0004 section 8, five worked examples). This applies directly to Gate 8's SLIs —
