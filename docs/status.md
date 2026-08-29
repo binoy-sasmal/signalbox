@@ -51,6 +51,12 @@ What the escalations put to the human, and what came back: the guard removal sta
 Option 3 was confirmed as their decision; the voided reviews' F3–F7 and F9–F10 are
 recorded as **unrecoverable** rather than reconstructed, with the reasoning in the log.
 
+**One deliberate gap.** `f22366f..38a9542` — 15 commits, including a methodology change
+to the enforced credential gate — **will not be reviewed**, decided by the human at the
+Gate 1 boundary with the contents and the risk stated first. Recorded under *Deliberate
+gaps* in [`reviews/log.md`](reviews/log.md), not as a table row, because no review ran.
+The review clock restarts at Gate 1.
+
 ## Next
 
 **Gate 1** (repo layout and remote state), `docs/PLAN.md` section 7. Beginning now.

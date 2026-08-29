@@ -159,6 +159,42 @@ That last part cannot be fixed from here. The removal changes `.claude/agents/`,
 a review of it in the session that made it would be reviewing a configuration that
 no longer exists, and would be VOID on arrival. It needs a restart first.
 
+## Deliberate gaps — ranges that were not reviewed, on purpose
+
+This file's stated blind spot is that it records reviews that happened and is
+silent about reviews nobody asked for. A stretch deliberately left unreviewed and
+a stretch nobody thought about are indistinguishable in it. This section exists so
+the first kind is visible.
+
+**Not table rows.** The table is one row per `/review` invocation and its tally
+counts reviews. No review ran over these ranges, so a row would inflate coverage —
+the same error the probe row already makes and admits to.
+
+### `f22366f..38a9542` — 15 commits, 2026-08-29
+
+Decided by the human at the Gate 1 boundary, with the contents and the risk stated
+first. Reported here rather than left to inference.
+
+What is in the range, and why it is the kind of thing a review is for:
+
+- **`df63680` changes the enforced credential gate's methodology** — the `key = value`
+  rule was ungated from file suffix, and a new structural exemption
+  (`is_an_expression()`) was added. That is halt condition 4.3, a change to a
+  measurement rule, in the gate that CLAUDE.md's secrets hard rule depends on.
+- **`0550456` and `084818c` add rules to `CLAUDE.md`** — the reviewer's own standing
+  instructions, written by the builder.
+- **`aaf52c1` and `ca9f13f`** record findings and dispositions about the builder's own
+  work, including the judgement that F3–F7/F9–F10 are unrecoverable.
+
+**What this costs, stated plainly.** The gate rewrite has no independent adjudication.
+Its evidence — extensionless and `.ini` behaviour before and after, the seven `.py`
+findings, and the fail-first verification that restoring the suffix gate turns three
+of four new tests red — is real and reproducible, but every word of it is
+builder-reported. Nobody who did not write the change has read it.
+
+**Accepted by the human on that basis.** The review clock restarts at Gate 1.
+
+
 ## Findings in full
 
 Per the rule in `CLAUDE.md`. Reviews 1 and 2 predate it and their findings are gone;
