@@ -29,11 +29,19 @@ __pycache__/
 # `~/.aws`. It was caught by inspection before any commit -- not by a gate.
 #
 # Read `docs/limits.md` before trusting this. The structural check would not
-# have stopped that commit: it walks tracked files, so an untracked credential
-# is invisible to it, and its key=value rule is gated on file suffix, so an
-# extensionless `credentials` file is scanned and then exempted from the one
-# rule that would have fired. An ignore rule is what actually stands between
-# `git add -A` and a pushed key.
+# have stopped that commit, and one of the two reasons has since been fixed:
+#
+#   - STILL TRUE: it walks tracked files, so an untracked credential in the
+#     working tree is invisible to it. That is the half that is still open.
+#   - NO LONGER TRUE, closed in df63680: the key=value rule was gated on file
+#     suffix, so an extensionless `credentials` file was scanned and then
+#     exempted from the one rule that would have fired. It now runs on every
+#     scannable file. This comment asserted the old behaviour for three commits
+#     after it stopped being true -- corrected 2026-08-29 after review 6's O1.
+#
+# An ignore rule is still what stands between `git add -A` and a pushed key,
+# because the tracked-file scan cannot see the file until the commit that adds
+# it. `git add -f` overrides an ignore rule; this is a backstop, not a gate.
 .aws/
 .env
 .env.*
