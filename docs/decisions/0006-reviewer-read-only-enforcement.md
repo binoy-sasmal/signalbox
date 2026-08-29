@@ -49,14 +49,24 @@ The same probe established the other half:
 - Its system prompt contained section 2a, committed in `8585810`. Its `CLAUDE.md`
   was post-`c9b7e64`. Both current.
 
-**The frontmatter is read. The `hooks:` key inside it does nothing.** Prompt
-freshness and hook wiring were assumed to travel together; they do not. That is
-the finding that outlives the guard, and it is why voided review 2's F1 — which
-reported the prompt *and* the hooks as stale together — was only half right.
+**The frontmatter is read; the `hooks:` key did not take effect in the session
+tested.** Prompt freshness and hook wiring were assumed to travel together, and
+here they did not. That is the finding that outlives the guard, and it is why
+voided review 2's F1 — which reported the prompt *and* the hooks as stale
+together — was only half right.
 
-*Why the hook does not apply is a claim about Claude Code's own behaviour and is
-not asserted here.* What is asserted is the observation: two commands the
-committed guard denies by construction were executed without a denial.
+*The size of this claim, stated precisely, because an earlier draft of this
+section overstated it.* What is observed is one probe session, from an
+interactive freshly restarted session with workspace trust accepted, in which two
+commands the committed guard denies by construction executed with no denial.
+**n=1.** Whether agent-frontmatter `hooks:` blocks never apply, apply only under
+a condition this session did not meet, or failed here for a reason specific to
+this guard, is **UNVERIFIED**. A general property of Claude Code does not follow
+from one session and is not asserted here.
+
+The removal does not rest on the cause. It rests on the check not having run —
+see the Decision below, which turns on "a check that does not run is not
+enforcement" and needs no explanation of why it did not run.
 
 ## Options
 

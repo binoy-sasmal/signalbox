@@ -42,9 +42,11 @@ they must not be quoted as one:
   and nothing else. No `Write`, no `Edit`, no `Agent`. Observed directly: the probe
   asked the running agent for its exact function list and got those four.
 - **NOT ENFORCED — any restriction on what `Bash` can reach.** The frontmatter
-  PreToolUse hook does not apply in practice. It was tested from an interactive,
-  freshly restarted session with workspace trust accepted, and it did not fire.
-  The guard, its 73 tests and its CI job were removed rather than kept as
+  PreToolUse hook did not fire in the one session it was tested from — an
+  interactive, freshly restarted session with workspace trust accepted. **n=1,
+  and the cause is UNVERIFIED**; do not read this as "frontmatter hooks never
+  work". What follows either way is that nothing observed here constrains `Bash`,
+  so the guard, its 73 tests and its CI job were removed rather than kept as
   something that looks like a gate.
 - **RESTING ON RESTRAINT — the reviewer declining to mutate the repo.** Observed
   once, when it refused a destructive `rm -rf` probe on the grounds that a
@@ -59,8 +61,9 @@ stated here at its real size.
 
 The load-bearing part, because it is the assumption that hid the problem for three
 days. The same probe found the agent's system prompt **current** — section 2a
-present, `CLAUDE.md` post-`c9b7e64` — while the guard was **not firing**. The
-frontmatter is read (`tools:` is applied) and the `hooks:` key within it is not.
+present, `CLAUDE.md` post-`c9b7e64` — while the guard was **not firing**. So in
+that session the frontmatter was read (`tools:` was applied) and the `hooks:` key
+within it did not take effect. One session; why is UNVERIFIED.
 
 Those two were assumed to travel together. They do not. A future reviewer cannot
 infer that its hooks arrived from the fact that its instructions did, and any review
