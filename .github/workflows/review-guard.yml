@@ -23,5 +23,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
-      - name: Adversarial suite
+      # Both suites, same job, same pattern. test_review_readonly_guard.py
+      # proves the guard decides correctly; test_review_wiring.py proves it is
+      # connected and fails closed when it is not. The first passes green with
+      # the hooks: block deleted, so it cannot stand alone.
+      - name: Guard and wiring suites
         run: python3 -m unittest discover -s .claude/hooks -p 'test_*.py' -v
