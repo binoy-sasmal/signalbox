@@ -76,6 +76,27 @@ Verified against synthetic fixtures with known ground truth, including the 40%-t
 broke the previous measure. Stable and regenerating fixtures with *identical* turnover and identical
 semantic persistence separate 1.00 against 0.00.
 
+**QUALIFIED 2026-08-30 — HSL trip updates' evidence for this method was degenerate, though its
+verdict was not wrong.** Gate 5 found that HSL's `entity.id` persistence, as recorded in
+`docs/metrics.md`, was computed with `semantic_persistence` measured against `(trip_id,
+start_date)` — a key that collapses HSL's 1,348 entities per snapshot onto **four** keys, because
+this producer supplies no `trip_id` at all. See §8 instance 9.
+
+The population "both keyings cover an identical population" describes was, for HSL, four groups
+rather than 1,348 entities. The `id_persistence / semantic_persistence` ratio computed from a
+four-key denominator is not the number this method's design assumes it is measuring, whatever value
+it happened to produce.
+
+**The verdict stands regardless, for a reason external to this method.** Recomputed directly on
+1,348 entities under the corrected key, `entity.id` and the corrected semantic key agree to four
+decimal places (churn 0.2879 both, `runs/gate5/predictions.txt`) — which is the stable-id case this
+method's ratio is built to detect, confirmed on the population the method was supposed to have used
+in the first place. HSL's `stable` verdict is corroborated, not merely surviving.
+
+**VBB, OVapi and `hsl_vehiclepositions` are unaffected.** Each populates the fields its own key uses
+— `trip_id` for the first two, `vehicle.id` for the third — so none inherits HSL's collapse. This is
+a defect in one tenant's key selection, not in the ratio method or in the other three verdicts.
+
 ### 5. Cadence is only a feed property if we sampled fast enough for it
 
 **Nyquist rule: if the observed cadence is under twice the interval we actually
@@ -146,11 +167,45 @@ Every measurement here now states the domain in which its answer means anything,
 | 3 | **Test C** — asynchronous re-poll | Re-poll gap must be shorter than the cadence | `hsl_vehiclepositions` | Returned a false `echo` that **outvoted two correct tests**, dragging the verdict to `unknown` |
 | 4 | **Cadence** | Sampling must be at least 2× the cadence (Nyquist) | gtfs.de | Reported a 30s cadence that was purely our own sampling grid |
 | 5 | **304 rate** | More than one poll per generation | OVapi | Reported 0% from **77 observations** in a regime where a 304 was near-impossible, and a Gate 5 design consequence was drawn from it |
+| 9 | **Semantic churn** — dedup key partitions the population | The key must be 1:1 with the entities it identifies | HSL trip updates, Gate 5 | Collapsed 1,348 entities onto 4 keys and reported a plausible churn rate computed over the wrong population |
 
 Instances 4 and 5 are the same statement about different quantities, which is what made the pattern
 visible: **sampling at or near the rate of the thing you are measuring destroys the information you
 are trying to collect.** The analyser had been taught that for cadence and not for 304 rates, so it
 made the identical mistake twice in two hours.
+
+**Instance 9 is a different dimension, found five months later while building Gate 5, and it belongs
+in this table rather than a new one precisely because the principle is the same and the axis is
+not.** Instances 1–5, 6–8 (below) all check a *sampling* precondition: was there enough signal, over
+enough time, at a fine enough grain, for this test to have an opinion. Instance 9 checks a
+*grouping* precondition instead: does the key a measurement aggregates by actually separate the
+population it claims to describe. No amount of correct sampling rescues an aggregate computed over
+the wrong groups — the two axes are independent, and this repo had a guard for one and none for the
+other.
+
+**HSL publishes no `trip_id` — 0 of 1,348 entities, every snapshot checked.** The semantic key
+`(trip_id, start_date)` was written from the GTFS-RT specification's primary identification form
+without checking which form this producer actually uses. On this feed it collapsed one snapshot into
+**four keys**, one per `start_date`, and `median_churn_keyed_on_semantic_key: 0.250` was never a
+churn rate over 1,348 entities — it was one of four date-buckets changing. Corrected to **0.2879**,
+recomputed on the key GTFS-RT's other permitted form actually provides
+(`route_id`+`direction_id`+`start_date`+`start_time`); identical to `FeedEntity.id`'s figure on this
+feed. Full arithmetic in `runs/gate5/predictions.txt`; correction recorded in `docs/metrics.md`.
+
+**The tell was in the committed output for days, survived a review, and was used as the basis for a
+prediction that was approved.** The old key's churn carries a **p95 of 0.75** — three of four
+date-buckets changing — which is not a shape a real key over 1,348 entities produces; a healthy
+dedup key on a feed this size does not swing between "nothing changed" and "75% changed" from one
+comparison to the next. The number was visible in `runs/run2/analysis.json` from the moment it was
+committed. Nobody read it as a symptom, including during the review that ran over the range
+containing it. It took building the consumer — a table that filled with 4 rows for 863 entities
+while the same run's churn figure claimed 25% — to make the collapse impossible to miss.
+
+**The guard this instance produced, `assert_key_is_a_key()`, has no analogue among 1–8.** It does
+not check sample count, sampling rate, or content staticness; it checks that
+`distinct_keys / keyable_entities` clears a threshold, and refuses rather than reporting a number
+computed over a degenerate grouping. Any future dedup key — a second tenant, a different entity
+type — inherits this check rather than this instance's specific bug.
 
 Three properties of this failure that make it worth a principle rather than five patches:
 
@@ -385,6 +440,42 @@ count of *bypasses* above is a different sequence and is unaffected.
 **Process note.** The narrowed predicate was stated to the human and approved before it was
 written, rather than written and explained afterwards — the sequence CLAUDE.md rule 1 asks
 for and the one ADR 0006 and ADR 0008 were both found not to have followed.
+
+### 14. A wrapper reports the status of the wrong thing — twice now
+
+A small pattern, recorded because it has now happened twice in this repo, in two different
+languages, both times silently.
+
+**First instance, Stage 0.** The probe test suite was run as `python -m unittest ... | tail -N`.
+`tail`'s exit status is what a shell sees, and `tail` always exits 0 — so a failing test suite
+still reported success to anything checking `$?`. The pipeline reported the status of the last
+command in it, not the status of the command that mattered.
+
+**Second instance, Gate 5, 2026-08-30.** `scripts/probe/run-awake.sh` disables sleep, runs the
+wrapped command, then always runs a `restore` function on `trap ... EXIT` to put the machine's
+power settings back. The wrapped command's exit code was never captured, so whatever the trap's
+own last statement returned — a `powercfg` call, near-universally 0 — became the script's exit
+status. A `python -m ingest.run ...` that died instantly on `ModuleNotFoundError` still reported
+exit 0. Found because the Gate 5 run wrote no rows and the console log was checked by hand; nothing
+automated caught it.
+
+**The shape is identical both times: a wrapper whose own final action determines the reported
+outcome, independent of whether the thing it wraps succeeded.** A pipe's last stage, a trap that
+runs unconditionally on exit — either one silently substitutes its own status for the status that
+was supposed to be reported. This is the same defect as the coverage check in §8's introduction —
+a run reporting success while being 94% hole — one layer further out: there it was a *program*
+that did not verify its own completion; here it is a *harness around* the program doing the same
+thing to the program's exit code.
+
+**The fix in both cases is to capture and re-raise explicitly**, rather than trust the last thing
+that happened to run. In the second instance: `"$@"; STATUS=$?; ...; exit "$STATUS"`, with the
+restore trap left in place for the side effect it exists for, but no longer trusted for the exit
+code.
+
+**Where to look for a third instance:** any wrapper whose job is "do something around a command" —
+retry logic, a timing harness, a cleanup trap, a logging pipe — is a candidate, because the
+wrapper's own control flow has an exit path of its own that can silently outrank the wrapped
+command's.
 
 ## Consequences
 

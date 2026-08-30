@@ -74,8 +74,20 @@ if [ "$(read_timeout AC)" != "00000000" ] || [ "$(read_timeout DC)" != "00000000
 fi
 echo "[power] sleep disabled for the duration (verified)"
 
+# The wrapped command's exit status is captured and re-raised explicitly.
+# Without this the EXIT trap runs last and ITS status becomes the script's, so a
+# command that failed instantly reported success -- observed 2026-08-30, when
+# the Gate 5 run died on a ModuleNotFoundError and this wrapper still exited 0.
+# `set -e` does not help: the trap fires on the way out either way. In a repo
+# whose Stage 0 was voided by a run that reported `complete` while being 94%
+# hole, a wrapper that launders a failure into a success is the same defect one
+# layer out.
+set +e
 if [ "$#" -gt 0 ]; then
     "$@"
 else
     "$PY" scripts/probe/poll.py "$CONFIG"
 fi
+STATUS=$?
+set -e
+exit "$STATUS"

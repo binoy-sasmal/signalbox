@@ -22,8 +22,17 @@ startup is exactly that component.
 
 ## Decision 1 — the dedup key is the semantic key, and the change predicate is the probe's
 
-**Key:** `(trip_id, start_date)` for a TripUpdate.
+**Key, as written when this ADR was decided:** `(trip_id, start_date)` for a TripUpdate.
 **Changed:** `sha256` of the entity serialized with `FeedEntity.id` cleared.
+
+> **CORRECTED 2026-08-30, while building against this ADR.** `(trip_id, start_date)` is not the
+> key this service implements, and the reasoning below that leans on it is wrong in one place.
+> HSL publishes no `trip_id` at all — 0 of 1,348 entities — so this key collapses one snapshot to
+> **four** keys. The service implements the form GTFS-RT actually provides on this feed:
+> `route_id`+`direction_id`+`start_date`+`start_time` (`trip_key()` in `ingest/decode.py`, `sql/001_schema.sql`).
+> Left in place below rather than rewritten, because the wrong premise and the reasoning built on
+> it are the record of what happened, not just the fix. Full mechanism:
+> [ADR 0004 §8 instance 9](0004-probe-methodology.md), [ADR 0004 §4](0004-probe-methodology.md).
 
 **This is character-for-character the definition the Stage 0 analyser used** — `entity_payload()`
 and `entity_semantic_key()` in `scripts/probe/analyse.py`. That is the point of choosing it.
@@ -33,6 +42,12 @@ turns that into a **prediction the gate can falsify**: the service should suppre
 entity writes. A design with its own predicate inherits no number and can only report whatever it
 happens to do.
 
+> **The 0.250 / 75% figures above are the degenerate-key artefact, not a churn rate.** They were
+> computed on the four-key collapse this correction describes. The prediction actually run against
+> was recomputed before the verification run — **0.2879 / ~71%** — see `docs/metrics.md`'s Gate 5
+> predictions and `runs/gate5/predictions.txt`. Kept here, unedited, because the failure is the
+> useful part of the record.
+
 **Why not `entity.id`, which measured stable.** The premise this decision was first put under —
 that `entity.id` is unstable and the semantic key differed — is the opposite of what Stage 0 found.
 `entity.id` is stable on all four probed feeds (persistence ratio 0.9925 on HSL, 0.95–1.00
@@ -41,9 +56,19 @@ weaker reasons still favour the semantic key:
 
 1. **Churn keyed on `entity.id` is 0.288 against 0.250 semantic** — about 15% more writes for no
    benefit.
+
+   > **CORRECTED.** Under the collapsed key this looked like a 15% gap. Under the corrected key
+   > the two are **identical to four decimal places** — 0.2879 both — because the corrected
+   > semantic key and `entity.id` turn out to partition HSL's entities the same way. This reason
+   > does not survive the correction and is not the basis for the decision; reason 2 is.
 2. **`FeedEntity.id` is scoped to uniqueness within one `FeedMessage`** by the specification. Its
    stability is a property of this producer today, guaranteed by nothing. The semantic key is
    guaranteed by the data model.
+
+**The decision itself — semantic key over `entity.id` — is unaffected by the correction**, and now
+rests on reason 2 alone: a guarantee from the data model rather than a guarantee from one
+producer's current behaviour. Reason 1 turned out to argue for a preference with no measured
+difference behind it, not for a wrong choice.
 
 Both keyings are counted at runtime so the disagreement stays visible rather than becoming an
 assumption.
@@ -53,7 +78,7 @@ assumption.
 | Level | Key | What it detects | Stage 0 value |
 |---|---|---|---|
 | Snapshot | `sha256(body)` | A 200 whose body is byte-identical to its predecessor — a false-200 | 3 / 247 ≈ 1.2% |
-| Entity | `(semantic key, content hash)` | An entity unchanged since the last snapshot | ≈ 75% suppressed |
+| Entity | `(semantic key, content hash)` | An entity unchanged since the last snapshot | ≈ 71% suppressed (corrected; see Decision 1) |
 
 Collapsing them into one figure would hide which is which. They have different causes, different
 magnitudes and different consequences: the first is upstream behaviour, the second is our write
@@ -112,9 +137,9 @@ reaches schema granularity — would block ready work on a Stage 2 question.
 
 ## Consequences
 
-- The 75% suppression figure is a falsifiable prediction, recorded in `metrics.md` before the run
-  with its Stage 0 provenance, and the observed value is recorded alongside it. **Neither replaces
-  the other.**
+- The ~71% suppression figure (corrected from an initial 75%, Decision 1) is a falsifiable
+  prediction, recorded in `metrics.md` before the run with its Stage 0 provenance, and the
+  observed value is recorded alongside it. **Neither replaces the other.**
 - Storing `entity_bytes` means the database holds protobuf, not columns. Accepted: it is the
   faithful record and it defers a query-model decision that has no requirement behind it yet.
 - Stage 2 must provide the schema through the operator before a second tenant exists. Until then

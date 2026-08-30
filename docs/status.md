@@ -194,6 +194,35 @@ wait on the support ticket and falling back to Hetzner CX32 — exactly as recor
 having other work in flight on that date is not a reason to let it slide. It removes the
 idleness, not the blocker.
 
+## Known Stage 2 prerequisite — the credential gate cannot see `PASSWORD 'value'`
+
+Recorded here, not only in `docs/limits.md`, so it is read **before** Stage 2 role DDL is
+written rather than found after a leak. `docs/limits.md` is where a reader goes looking for a
+known limit; this file is where a reader goes looking for what to do next, and this gap has a
+concrete next action attached to a stage that has not started.
+
+**The gap.** `.sql` joined the structural credential gate's scan set at Gate 5 (2026-08-30),
+widening coverage rather than exempting anything. Its `key = value` / `key: value` rule anchors
+on a delimiter — `:` or `=` — between the name and the value. **Postgres's own DDL syntax for
+setting a password has no such delimiter**: `CREATE ROLE tenant_x LOGIN PASSWORD 'secret';` is a
+keyword followed by a string literal. The rule that exists to catch credentials cannot see the
+canonical way SQL spells one. Pinned as a failing-as-designed test,
+`test_GAP_sql_string_literal_syntax_evades_the_key_value_regex`, in
+[`scripts/probe/test_check_no_secrets.py`](../scripts/probe/test_check_no_secrets.py) —
+asserted clean today, with an instruction in the test itself to flip it to `assertCaught` the day
+it closes.
+
+**Why it matters now rather than later.** Stage 2 (`docs/PLAN.md` section 11) provisions
+per-tenant Postgres roles, and role-creation DDL is exactly the shape this gap describes. Nothing
+about that work is blocked — the gap is a known limit of an enforced gate, not a missing
+capability — but the person writing that DDL should know before they write `PASSWORD '...'` in a
+file the credential gate will wave through.
+
+**What closing it would need**, so it is not re-derived at Stage 2: a keyword-aware rule for
+`.sql` specifically — matching `PASSWORD`, `IDENTIFIED BY` and equivalents against the string
+literal that follows them, independent of `:`/`=`. Out of scope for Gate 5, which touched no role
+DDL; in scope the day Stage 2 does.
+
 ## Next
 
 **Gate 2** (Terraform: OCI cloud floor), `docs/PLAN.md` section 7.

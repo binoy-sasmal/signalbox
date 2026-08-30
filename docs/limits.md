@@ -125,6 +125,21 @@ So **a pass means "no tracked file violates the rules", never "the working tree 
 clean."** The first moment a credential file becomes visible to the tracked-file scan
 is the commit that adds it.
 
+**No longer hypothetical — this limitation bit for real, 2026-08-30, at Gate 5.**
+`services/ingest/docker-compose.yml` was written with a plaintext local-dev password
+(`POSTGRES_PASSWORD: signalbox_local_dev`) and a code comment asserting the gate
+could not see the shape at all — `key: value` in YAML, no `=`. Running the gate against
+the file by hand, before it was staged, reported `passed`. **The comment's claim was
+wrong**: tested directly afterward against both the literal and an env-var form, the
+gate caught the literal every time — `is_auth_key_for_gate` matches `POSTGRES_PASSWORD`
+on the `password` substring regardless of delimiter. What actually passed the file was
+this section's own limitation: the file was untracked, `tracked_files()` never walked
+it, and a local invocation of the gate over an untracked new file scans zero files and
+still prints a reassuring `passed`. The password was replaced with a required
+environment variable before the file was ever staged, so nothing was committed either
+way — but the near-miss is the observed instance this section previously described only
+as a possibility.
+
 ### Half two — CLOSED 2026-08-29 in `df63680`: the rule was gated on file suffix.
 
 **This half is fixed. It is kept here because how it was found is the transferable
