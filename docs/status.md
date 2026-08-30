@@ -194,6 +194,46 @@ wait on the support ticket and falling back to Hetzner CX32 — exactly as recor
 having other work in flight on that date is not a reason to let it slide. It removes the
 idleness, not the blocker.
 
+## Review position — Gate 5, 2026-08-30
+
+**A `/review` was invoked and did not produce a verdict.** Recorded here rather than as a
+row in [`reviews/log.md`](reviews/log.md), by the rule already written there — *"a `/review`
+invocation that produces no adjudication is not a row"* — the same rule that governed the
+identical situation once before (see the entry below this one).
+
+**The range, computed rather than copied from the log.** Review 7's row in `reviews/log.md`
+reads `874e808..HEAD`, but that names HEAD *as it stood when review 7 ran*, not the current
+one. Its own text says review 7 covered "7 commits: the six responses to review 6, and the
+OCI signup rejection." Exactly seven commits between `874e808` (exclusive) and `0f8fbe0`
+(inclusive) match that description, and `0f8fbe0`'s own message is "record the OCI signup
+rejection" — confirming it as review 7's actual endpoint. The correct next range is
+`0f8fbe0..HEAD`, which includes `e7e362e` — the first commit responding to review 7 — as its
+first member. A range copied verbatim from the log's own row would have silently skipped it.
+
+**What ran, and where it stopped.** The `gate-reviewer` agent forked into eight parallel
+angle-checks over `0f8fbe0..HEAD`. Seven returned findings — some real, none adjudicated.
+The eighth (a cross-file tracer) never returned. The orchestrating pass that verifies,
+dedupes and ranks those findings into a verdict began — its last recorded words were "All
+consistent and verified. Let me wait for the remaining subagent responses now" — and then
+failed on a session rate limit before completing. **No ACCEPT/REJECT/ESCALATE, no rubric
+table, no adjudicated finding list exists from this invocation.**
+
+**The raw sub-agent output is not being treated as a review**, and is not summarised here.
+Some of it may be right — two independent angles both flagged that HTTP statuses outside
+200/304/transport-error produce an outcome string absent from Gate 5's failure taxonomy,
+which if real is exactly the kind of gap ADR 0010 exists to prevent. But an unverified,
+unranked, un-deduplicated pile of subagent claims is not what this repo's discipline calls a
+review, and treating it as one here would be exactly the shortcut CLAUDE.md's rule on
+`/review` exists to close off — *"it reads artefacts, not your account of them."* Retry after
+the session limit resets (2:30pm Europe/Berlin), same range.
+
+**So the position going into this boundary is unchanged from what it was before this
+attempt**: no valid review has adjudicated anything since review 7 closed at `0f8fbe0`. That
+covers all of Gate 5 — the reordering decision, the three Stage 0 corrections, the service
+build with its committed predictions, the trip_id-collapse findings, and the hour-run
+evidence. **Gate 5 is not recorded as passed anywhere in this file, and will not be until
+either a review adjudicates this range or the human decides otherwise.**
+
 ## Known Stage 2 prerequisite — the credential gate cannot see `PASSWORD 'value'`
 
 Recorded here, not only in `docs/limits.md`, so it is read **before** Stage 2 role DDL is
