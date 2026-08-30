@@ -1,0 +1,112 @@
+{
+ "tenant": "hsl_tripupdates",
+ "gate": 5,
+ "started_at": "2026-08-30T08:07:18.605000+00:00",
+ "ended_at": "2026-08-30T09:07:18.605333+00:00",
+ "elapsed_s": 3600.0,
+ "intended_duration_s": 3600.0,
+ "config": {
+  "poll_interval_s": 5.0,
+  "queue_depth": 2,
+  "db_schema": "tenant_hsl_tripupdates",
+  "incrementality": "FULL_DATASET",
+  "scheduling": "fixed-rate, single-flight, skip missed ticks (ADR 0005)",
+  "backpressure": "drop oldest (ADR 0010)"
+ },
+ "platform": {
+  "python": "3.12.5 (tags/v3.12.5:ff3bc82, Aug  6 2024, 20:45:27) [MSC v.1940 64 bit (AMD64)]",
+  "platform": "win32",
+  "sleep_suppression_requested": true
+ },
+ "coverage": {
+  "coverage": 0.9986,
+  "polling_seconds": 3595.0,
+  "lost_seconds": 0,
+  "gap_threshold_s": 60.0,
+  "gap_count": 0,
+  "largest_gap_s": 0.0,
+  "minimum_required": 0.9
+ },
+ "scheduling": {
+  "ticks_fired": 719,
+  "ticks_skipped": 1,
+  "skip_rate": 0.0014,
+  "configured_interval_s": 5.0,
+  "achieved_interval_s": {
+   "mean": 5.007,
+   "p50": 5.0,
+   "min": 4.997,
+   "max": 10.0
+  },
+  "note": "Achieved is measured, never inferred from configuration (ADR 0005)."
+ },
+ "http": {
+  "requests": 719,
+  "status_counts": {
+   "200": 241,
+   "304": 478
+  },
+  "transport_errors": 0,
+  "fetch_ms": {
+   "n": 719,
+   "p50": 142.5,
+   "p95": 2502.6,
+   "max": 5950.8
+  }
+ },
+ "conditional_requests": {
+  "bodies_returned": 241,
+  "not_modified": 478,
+  "not_modified_rate": 0.6648,
+  "false_200": 0,
+  "false_200_rate": 0.0,
+  "mean_body_bytes": 749170,
+  "bytes_transferred": 180550038,
+  "bytes_counterfactual_no_validators": 538653433,
+  "bytes_saved": 358103395,
+  "bytes_saved_fraction": 0.6648,
+  "note": "Only meaningful against the stated poll interval: at an interval equal to the cadence the saving is ~0 by construction."
+ },
+ "parse": {
+  "classes": {
+   "ok": 241
+  },
+  "failures": 0,
+  "failure_rate": 0.0
+ },
+ "dedup": {
+  "entities_presented": 215188,
+  "entities_written": 60987,
+  "entities_suppressed": 154201,
+  "suppression_rate": 0.7166,
+  "suppression_rate_steady_state": 0.7195,
+  "cold_start_presented": 883,
+  "cold_start_written": 883,
+  "entities_without_identity": 0,
+  "snapshots_persisted": 241,
+  "churn_median_semantic": 0.2819,
+  "churn_median_entity_id": 0.2819,
+  "churn_comparisons": 240,
+  "note": "Both keyings are measured. Stage 0 found them capable of disagreeing; a disagreement that stops being measured becomes an assumption."
+ },
+ "pipeline_outcomes": {
+  "failures": 0,
+  "failure_outcomes": [
+   "decode_empty_body",
+   "decode_not_protobuf",
+   "decode_parse_error",
+   "decode_wrong_schema",
+   "dropped",
+   "transport_error",
+   "write_failed"
+  ],
+  "note": "Gate 8's SLI 1 reads this taxonomy. `dropped` is a failure by ADR 0010, so a drop policy cannot launder errors out of the error budget."
+ },
+ "backpressure": {
+  "queue_depth": 2,
+  "dropped": 0,
+  "high_water": 1,
+  "write_failures": 0,
+  "note": "Drops are pipeline failures, not silent successes (ADR 0010). Expected zero here; a non-zero count is a finding."
+ }
+}

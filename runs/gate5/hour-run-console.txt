@@ -1,0 +1,8 @@
+[power] saved originals: standby-timeout ac=0min dc=0min
+[power] sleep disabled for the duration (verified)
+[run] tenant=hsl_tripupdates interval=5.0s depth=2 duration=3600s
+[run] sleep suppression requested=True (not a guarantee -- coverage is checked at the end)
+[run] skipped 1 tick(s): fetch outlasted the interval
+[run] coverage 99.9% of the intended window
+[run] report written to runs/gate5/hour-run-report.json
+[power] restored: ac=0min dc=0min

@@ -1,0 +1,73 @@
+### 1. Every fetch, by outcome ###
+
+   outcome    | status | count |             first             |             last              
+--------------+--------+-------+-------------------------------+-------------------------------
+ not_modified |    304 |   478 | 2026-08-30 08:07:23.605928+00 | 2026-08-30 09:07:08.605153+00
+ persisted    |    200 |   241 | 2026-08-30 08:07:18.605+00    | 2026-08-30 09:07:13.60584+00
+(2 rows)
+
+
+### 2. Parse classification -- by NATURE, not a single rate ###
+
+       decode_status       | count 
+---------------------------+-------
+ (no body -- 304 or error) |   478
+ ok                        |   241
+(2 rows)
+
+
+### 3. Snapshot duplicates: a 200 whose body hash equals its predecessor ###
+
+ false_200s | bodies |  pct  
+------------+--------+-------
+          0 |    241 | 0.000
+(1 row)
+
+
+### 4. Bytes: what crossed the wire, and the no-validators counterfactual ###
+
+ requests | bodies | not_modified | transferred | counterfactual | pct_saved 
+----------+--------+--------------+-------------+----------------+-----------
+      719 |    241 |          478 | 172 MB      | 514 MB         |     66.48
+(1 row)
+
+
+### 5. Dedup, steady state (the cold-start snapshot excluded) ###
+
+ snapshots | entities_presented | written | suppressed | pct_suppressed 
+-----------+--------------------+---------+------------+----------------
+       240 |             214305 |   60104 |     154201 |          71.95
+(1 row)
+
+
+### 6. The current-state table ###
+
+ trip_rows | key_forms |  key_form   | with_trip_id |  size   
+-----------+-----------+-------------+--------------+---------
+      1745 |         1 | route_start |            0 | 3104 kB
+(1 row)
+
+
+### 7. Key uniqueness, read back out of the primary key ###
+
+ rows | distinct_keys | distinct_components 
+------+---------------+---------------------
+ 1745 |          1745 |                1745
+(1 row)
+
+
+### 8. pipeline_latency, the Gate 8 SLI this schema exists to serve ###
+     fetch-completion -> row committed. Both endpoints are our own clock.
+
+ samples | mean_ms | p50_ms | p95_ms | max_ms 
+---------+---------+--------+--------+--------
+     241 |   192.3 |  192.7 |  219.2 |  294.1
+(1 row)
+
+
+### 9. Any fetch that is NOT persisted or not_modified -- the failure set ###
+
+ id | status | outcome | error 
+----+--------+---------+-------
+(0 rows)
+
