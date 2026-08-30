@@ -16,6 +16,44 @@ Update this file when a gate closes. Nothing else should restate it.
 
 ---
 
+## Position at a glance
+
+For a reader arriving cold. Detail and evidence for each line are in *Current position*,
+below, and in the sections this points to.
+
+- **Passed, out of order: Gate 1** (repo layout, remote state) **and Gate 5** (ingest
+  service, one tenant, one feed). The reordering that let Gate 5 go ahead of Gate 2 while
+  Gate 2 sat blocked is its own recorded decision — see *Reordering*, below — not a
+  deviation absorbed silently.
+- **Blocked: Gate 2** (OCI cloud floor). Configuration is written and statically validated;
+  its actual verification needs a tenancy that does not yet exist. **Decision due
+  2026-09-05** — continue waiting on the support ticket, or fall back to Hetzner CX32. See
+  *Next*, below.
+- **Not started: Gates 3, 4, 6, 7, 8, 9.** Two of the six need the real node and have no
+  local substitute: **Gate 3** (Ansible bootstraps the actual machine — hardening, k3s,
+  kubeconfig) and **Gate 9** (the rebuild drill proves the real infrastructure rebuilds from
+  git, which a local stand-in cannot demonstrate). The other four are **developable against
+  a local kind/k3d cluster** ahead of the real node existing — their artefacts (Helm chart
+  and values, ArgoCD Application manifests, Prometheus rules, the fault-injection scenarios)
+  have no node-specific dependency, even though **Gate 4**'s own pass criterion is proven on
+  the real cluster once Gate 3 exists, not on the local stand-in. **Gates 6, 7 and 8** are
+  the cleanest local cases: build and iterate locally, then point the same manifests at the
+  real cluster once it exists. **No local cluster work has started** — PLAN.md's own words
+  are not to scaffold ahead of the gate in front of it.
+- **Known Stage 2 prerequisite.** Postgres's own DDL for setting a role's password —
+  `PASSWORD 'value'` — has no delimiter the credential gate's `key=value`/`key:value` rule
+  anchors on, so it is currently invisible to `check_no_secrets.py`. Stage 2 provisions
+  per-tenant Postgres roles, which is exactly that shape. See *Known Stage 2 prerequisite*,
+  below, for the pinned failing-as-designed test and what would close it.
+- **Known Stage 3 subject.** OVapi's licence is deliberately `unresolved` (PLAN.md section
+  4, `metrics.md`) — use is explicitly permitted, but there is no SPDX identifier and no
+  attribution string for general use, and no enquiry has been sent. It is not blocking
+  anything today; it is held in reserve as Stage 3's compliance gate's first real subject —
+  *"reject any tenant whose `licence` is `unresolved`"* — rather than a rule every tenant
+  passes by construction.
+
+---
+
 ## Current position
 
 **Gate 0 passed 2026-08-29.** Three feeds usable for ingest with measured cadence — VBB
@@ -275,21 +313,28 @@ consistent and verified. Let me wait for the remaining subagent responses now" �
 failed on a session rate limit before completing. **No ACCEPT/REJECT/ESCALATE, no rubric
 table, no adjudicated finding list exists from this invocation.**
 
-**The raw sub-agent output is not being treated as a review**, and is not summarised here.
-Some of it may be right — two independent angles both flagged that HTTP statuses outside
-200/304/transport-error produce an outcome string absent from Gate 5's failure taxonomy,
-which if real is exactly the kind of gap ADR 0010 exists to prevent. But an unverified,
-unranked, un-deduplicated pile of subagent claims is not what this repo's discipline calls a
-review, and treating it as one here would be exactly the shortcut CLAUDE.md's rule on
-`/review` exists to close off — *"it reads artefacts, not your account of them."* Retry after
-the session limit resets (2:30pm Europe/Berlin), same range.
+**The raw sub-agent output was not treated as a review at the time**, and was not
+summarised here. It was, however, checked directly rather than trusted: two independent
+angles both flagged that HTTP statuses outside 200/304/transport-error produced an outcome
+string absent from Gate 5's failure taxonomy. **That defect was real** — confirmed by reading
+the code, not by trusting the subagent claim — and is fixed, tested and evidenced in
+`5000ded`. Checking an unverified claim before acting on it is not the same as treating the
+claim as an adjudication; the distinction held even though the claim turned out correct.
 
-**So the position going into this boundary is unchanged from what it was before this
-attempt**: no valid review has adjudicated anything since review 7 closed at `0f8fbe0`. That
-covers all of Gate 5 — the reordering decision, the three Stage 0 corrections, the service
-build with its committed predictions, the trip_id-collapse findings, and the hour-run
-evidence. **Gate 5 is not recorded as passed anywhere in this file, and will not be until
-either a review adjudicates this range or the human decides otherwise.**
+**No third `/review` attempt was made on this range, and none is now planned.** That is a
+recorded decision, not an oversight: [ADR 0012](decisions/0012-review-scope.md), written the
+same day, scopes `/review` to stage boundaries and to ranges touching the enforced credential
+gate or ADR 0004's measurement rules — and states explicitly that `0f8fbe0..HEAD` **does**
+touch the credential gate (`cfd90ac`, `2b502bc`), so it qualifies under the new rule too, and
+is accepted as permanently unreviewed history anyway, given two prior attempts had already
+failed to produce a verdict. That acceptance is ADR 0012's own stated cost, not a claim that
+this range didn't need review.
+
+**Gate 5 was subsequently declared passed** (see *Position at a glance* and the Gate 5 entry
+under *Current position*, both above) **on PLAN.md's own observed-evidence criterion, by the
+human's decision, with this review gap shown explicitly first rather than absorbed into a
+clean status line.** "Passed" here is deliberately narrower than "reviewed" — the two claims
+are not conflated anywhere in this file.
 
 ## Known Stage 2 prerequisite — the credential gate cannot see `PASSWORD 'value'`
 

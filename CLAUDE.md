@@ -91,14 +91,30 @@ The test: every changed line should trace directly to the current gate.
   base for interview claims. An unmeasured claim does not go in it.
 
 **At every gate boundary, state the review position before anything else.** Give the date of
-the last `/review`, the range it covered, and its verdict, from `docs/reviews/log.md`.
+the last `/review`, the range it covered, and its verdict, from `docs/reviews/log.md`. This
+is required at every gate boundary regardless of whether a new review runs there — see next.
 
-**If no review has run since the previous gate closed, that absence is the thing to report.**
-Not a caveat at the end — the first line. Nothing else in this repo detects it: the review log
-records reviews that happened and is silent about reviews nobody asked for, and a clean log
-during a stretch where `/review` was simply never run is indistinguishable from a clean log
-during a stretch where it was. A run of good work is exactly when the gap opens, because
-nothing feels wrong.
+**`/review` runs at stage boundaries, and on any range touching the enforced credential gate
+(`scripts/probe/check_no_secrets.py`) or a measurement rule governed by ADR 0004 — not at
+every gate boundary.** [ADR 0012](decisions/0012-review-scope.md) records why: cost (two
+review invocations have failed on quota or rate limit mid-synthesis, each blocking a gate
+boundary for hours), where the value actually was (every finding an outside review caught
+that the builder had not — review 6's F1 base64 hole in `check_no_secrets.py` being the
+standout — came from one of those two trigger conditions), and why the marginal value
+dropped for everything else (the rubric is now applied by the builder directly, without
+spawning the reviewer, and is catching real defects that way). **The rubric itself is not
+optional and costs nothing** — this scopes when the isolated agent runs, not whether its
+standards apply. ADR 0012 also names what would reverse this: two or more real defects later
+found in ranges the scope let pass unreviewed.
+
+**Under this rule, most gate boundaries will report a review position that predates the
+gate — that is the expected, correct shape, not a gap.** A gap worth reporting is a boundary
+that met one of the two trigger conditions above and still went unreviewed; state that
+plainly, as the first line, the way an unconditional absence used to be reported before this
+rule existed. Nothing else in this repo detects a `/review` that was never asked for — the
+review log records reviews that happened and is silent about the rest — so this judgement
+call (did this range meet a trigger condition) is the one thing left for the builder to get
+right rather than a mechanical check.
 
 **A log row and the status line move in the same commit.** Appending a row to
 `docs/reviews/log.md` and updating the review position in `docs/status.md` are two
