@@ -11,6 +11,34 @@ pipeline, storage, quotas, dashboards and alerts with no human touching a cluste
 [`docs/limits.md`](docs/limits.md) says what this is not. That last one is not
 boilerplate; read it before believing anything above.
 
+## Architecture
+
+![Signalbox architecture: a contributor's pull request enters a GitHub repo; CI
+runs checks and Terraform, writing state to an S3 bucket in AWS and provisioning
+a single ARM server in Oracle Cloud; ArgoCD on that server deploys Postgres,
+per-tenant ingest pipelines and Prometheus with Grafana; the pipelines poll
+public transit feeds, write rows to Postgres and emit metrics.](docs/images/system-overview.png)
+
+**This is the target system, not what runs today.** Nothing inside the Oracle
+Cloud box exists yet — see [`docs/status.md`](docs/status.md) for what is
+actually built, and the section below.
+
+Two boundaries carry most of the design. **Terraform owns cloud resources and
+ArgoCD owns everything inside the cluster**, with `tenants/<name>.yaml` as the
+single source of truth feeding both — two reconcilers over one object produce a
+silent flapping loop, not an error. And **AWS holds Terraform state and nothing
+else**, because the bucket has to exist before anything that stores state in it
+([ADR 0007](docs/decisions/0007-terraform-state-backend.md)).
+
+The drawing is deliberately coarse. Three precise diagrams — system context,
+the tenant-onboarding path, and one tenant's data path — are in
+[`docs/architecture.md`](docs/architecture.md) as Mermaid source, along with a
+list of what `PLAN.md` leaves underspecified. Two simplifications worth naming
+here: ArgoCD reaches Postgres through an operator rather than directly
+([ADR 0003](docs/decisions/0003-postgres-object-ownership.md)), and the three
+Ansible bootstrap steps that create the cluster before ArgoCD can manage itself
+are not drawn at all.
+
 ## What exists right now
 
 Stage 0 (feed probe) is complete and Stage 1 has just started. There is no cluster,
