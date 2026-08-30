@@ -616,6 +616,89 @@ produced it was degenerate. The other three feeds are unaffected: VBB, OVapi and
 `hsl_vehiclepositions` all populate the fields their keys use. **This is a defect in the key,
 not in the ratio method.**
 
+### Observed, 2026-08-30 — the hour run
+
+**719 requests, 08:07:18–09:07:18 UTC, coverage 99.9%, exit 0.** Every prediction is kept
+as written; nothing below edits row 1–7 of the table above. Evidence:
+[`runs/gate5/hour-run-report.json`](../runs/gate5/hour-run-report.json),
+[`hour-run-database.txt`](../runs/gate5/hour-run-database.txt) (read back independently
+from Postgres, not from the JSON the run itself wrote),
+[`hour-run-console.txt`](../runs/gate5/hour-run-console.txt).
+
+| # | Quantity | Predicted | Observed | |
+|---|---|---|---|---|
+| 1 | Parse failure rate | 0% | **0%** (0/241) | match |
+| 2 | Snapshot duplicate rate (false-200) | ~1.2% | **0%** (0/241) | **diverges — see below** |
+| 3 | Entity suppression, steady state | ~71% (71.21%) | **71.95%** | match |
+| 4 | Bytes saved, at 5s interval | ~66% (66.26%) | **66.48%** | match |
+| 5 | Ticks skipped | ~2 (Poisson λ=1.9, range 0–5) | **1** | within range |
+| 6 | Snapshots dropped | 0 | **0** | match |
+| 7 | Achieved poll interval | 5.0s mean/median | **5.007s mean, 5.0s p50** (max 10.0s, the one skip) | match |
+
+#### Row 2 — a real divergence, recorded unresolved
+
+**Predicted ~1.2% false-200s (3 of 247, from Stage 0 run 2). Observed 0 of 241.** Zero is a
+different claim from "fewer than expected", and it is stated as unresolved rather than
+explained, per the rule this file has followed since Stage 0: a plausible story is not
+evidence.
+
+Candidate mechanisms, none asserted:
+
+- **HSL's behaviour genuinely changed** between 2026-08-28 (Stage 0) and 2026-08-30 (Gate 5)
+  — different time of day, different load, a server-side change. Nothing here measures that;
+  it is a hypothesis, not a finding.
+- **The interval changed what is observable.** Stage 0 ran at a 5.17s achieved interval
+  (sleep-after-completion); Gate 5 ran fixed-rate at 5.0s. A false-200 requires the server to
+  regenerate identical content between two polls that both land inside one generation window,
+  so a tighter interval could plausibly narrow that window — but this is arithmetic about a
+  mechanism, not a measurement of one, and 5.17s vs 5.0s is a small difference to hang a
+  causal claim on.
+- **3-in-an-hour may have always been inside the noise** for a rate this low. 3/247 has wide
+  uncertainty at that sample size; 0/241 is not obviously incompatible with a true rate of
+  ~1%. Distinguishing "the rate changed" from "the rate was never precisely 1.2%" needs more
+  than two one-hour samples.
+
+**What would resolve it:** repeat one-hour runs at different times of day, holding the
+interval fixed, so the number of samples grows rather than the number of untested hypotheses.
+Not done here — this run answers Gate 5's own verification criterion regardless of which
+mechanism, if any, explains row 2.
+
+#### Body size moved 30% between Stage 0 and Gate 5 — the same lesson as VBB, from a new angle
+
+**Predicted 1,075,427 B mean body (Stage 0 run 2). Observed 749,170 B mean body — 30%
+smaller.** Prediction 4's percentage landed close anyway (66.26% predicted, 66.48% observed)
+because it is a *ratio* — bytes-saved-over-counterfactual is close to scale-invariant in body
+size, so a right answer arrived through a metric insensitive to the thing that actually moved.
+The absolute bytes did not land close: **172 MB transferred**, not the ~250 MB the prediction
+arithmetic implied from Stage 0's body size.
+
+**This is Stage 0's single-hour-duration finding again, from a new direction.** Section
+"Documented cadence is unverified in either direction" above records that VBB's own cadence
+moved from 16s (a 16-minute sample) to 29s (a 60-minute sample) — Stage 0's own instrument,
+under-sampled, disagreeing with itself. This is the same limitation seen in a different
+variable: **Stage 0 measured HSL's payload size from one hour on one day, and that hour never
+saw HSL's payload vary by time of day.** A single-hour Stage 0 sample cannot distinguish "this
+is what the feed sends" from "this is what the feed sent between 15:16 and 16:17 on
+2026-08-28." Nothing here says which explanation is right — only that 30% is too large a gap
+to file as noise, and too small a sample (two one-hour windows) to explain.
+
+Not a Gate 5 defect: the pipeline handled the smaller payload correctly, and every downstream
+number (suppression, bytes-saved-fraction) is internally consistent with what actually arrived.
+It is a limit on what Stage 0's evidence duration can support, discovered by a second gate
+built on top of it — which is exactly the shape the cadence finding predicted would recur.
+
+#### The key-collapse guard held under an hour of live traffic, not just Stage 0 snapshots
+
+**1,745 distinct trips over the run. 1,745 distinct primary keys. Zero collisions.**
+`assert_key_is_a_key()` (ADR 0004 §8, instance 9) never fired, because the key never needed
+refusing — confirmed by reading the primary key back out of Postgres independently
+(`runs/gate5/hour-run-database.txt`, section 7), not by trusting the run's own counters.
+
+This is the corrected key — `route_id`+`direction_id`+`start_date`+`start_time` — verified
+against real traffic accumulated over an hour, where the collapsed key would have shown at
+most a handful of distinct values regardless of how many trips actually ran. It is the ninth
+guard dimension named in ADR 0004 §8, confirmed on data no fixture produced.
+
 ## Still unmeasured
 
 - **`hsl_vehiclepositions` conditional-request behaviour** — needs sampling faster than its cadence

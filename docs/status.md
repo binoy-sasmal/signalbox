@@ -63,8 +63,65 @@ confirmed from HashiCorp's documentation, but **concurrent lock behaviour has no
 been observed** — no two Terraform runs have contended for this state. The claim
 "state locking works" rests on documentation, not on evidence from this repo.
 
+**Gate 5 passed 2026-08-30.** Ingest service, one tenant (`hsl_tripupdates`), one feed.
+PLAN.md section 7's criterion — *"run locally against the live feed for one hour. Record
+parse failure rate, duplicate rate, and bytes saved by conditional requests"* — is met on
+observed evidence: 719 requests, 08:07:18–09:07:18 UTC, coverage 99.9%, exit 0. Full
+observed-vs-predicted comparison, including two findings recorded rather than resolved
+(a false-200 divergence, and a 30% body-size shift traced to Stage 0's single-hour
+duration), under "Observed, 2026-08-30" in [`metrics.md`](metrics.md). Raw evidence:
+[`runs/gate5/`](../runs/gate5/).
+
+**Design agreed before any code was written**, per CLAUDE.md rule 1 — feed, poll interval,
+backpressure, dedup key, storage shape and scheduling were each presented with options and
+a recommendation, and confirmed before implementation. ADR 0005 (scheduling) finalised at
+this gate; ADR 0009 (storage model, dedup key) and ADR 0010 (backpressure) newly written.
+Seven falsifiable predictions were committed **before** the run, so nothing could be
+interpreted into passing afterward — PLAN.md section 6.6's own discipline applied a second
+time, to a gate rather than a probe.
+
+**Building it found a real Stage 0 defect**, the strongest finding Gate 5 produced: HSL
+publishes no `trip_id` at all, so Stage 0's semantic key collapsed 1,348 entities per
+snapshot onto four keys, and `median_churn_keyed_on_semantic_key: 0.250` was never a churn
+rate — it was one of four date-buckets changing. Recomputed under the key GTFS-RT's other
+form actually provides: 0.2879, identical to `entity.id`'s. Full mechanism, and the
+guard this produced (`assert_key_is_a_key()`, ADR 0004 §8 instance 9 — a new dimension,
+not another sampling case), in `1fe868e`. Verified holding under an
+hour of live traffic afterward: 1,745 distinct trips, 1,745 keys, zero collisions.
+
+**A second real defect was found and fixed before this gate was declared passed**, on the
+same day, in response to the question "is there actually no issue, or has none been looked
+for": HTTP statuses outside 200/304/transport-error built an outcome string
+(`f"unexpected_{status}"`) that could never be a member of the closed failure taxonomy, so
+a 429 or 500 from the upstream would be recorded to Postgres correctly and vanish from
+`pipeline_outcomes.failures` — the number Gate 8's SLI 1 will read. Same shape as ADR
+0010's drop-laundering concern, one layer over. It did not corrupt this run's evidence
+(`status_counts` was `{200, 304}` only, confirmed by replaying the run's real statuses
+through the fixed classifier rather than assumed:
+[`runs/gate5/unexpected-status-fix-replay-check.txt`](../runs/gate5/unexpected-status-fix-replay-check.txt)),
+so a second hour-long run against the live feed was not taken — what needed proving was
+correctness for status codes this run never received, and that is proven by the fix's own
+fail-first mutation suite instead
+([`runs/gate5/unexpected-status-fix-fail-first.txt`](../runs/gate5/unexpected-status-fix-fail-first.txt)),
+which constructs those codes directly. **The first fail-first pass on this fix was itself
+incomplete** — it tested the isolated classifier and missed that the report's failure sum
+had its own separate bug, caught only by running the mutations and reading that two of them
+passed clean. One of those two turned out to be a no-op in the mutation harness itself, not
+evidence about the code; both are recorded in the capture rather than only the corrected
+result.
+
+**What is NOT verified.** No `/review` has adjudicated this code. Two attempts both failed
+before producing a verdict — a session-quota error and, after the range was corrected, a
+session rate limit mid-synthesis — and per the rule already in
+[`reviews/log.md`](reviews/log.md), neither is a row there. See *Review position*, below,
+for the full account and the corrected range a retry should use. **This gate is declared
+passed on the observed evidence PLAN.md's own criterion asks for, which is a different and
+narrower claim than "reviewed."** The human decision to write it passed under that
+condition is recorded here as the human's, made after being shown the review gap explicitly
+rather than having it absorbed silently into a clean-looking status line.
+
 **Stage 0 complete. Stage 1 in progress**, and from 2026-08-30 no longer strictly in
-order: Gate 1 passed, Gate 2 written but blocked, Gate 5 in progress, Gates 3, 4 and 6–9
+order: Gate 1 passed, Gate 2 written but blocked, **Gate 5 passed**, Gates 3, 4 and 6–9
 not started. The reasoning for taking Gate 5 out of order is under *Reordering*, below.
 A single "gate N of 9" would assert a sequence that no longer holds.
 
