@@ -49,6 +49,7 @@ OUTCOMES = (
     "dropped",          # evicted from the bounded queue (ADR 0010)
     "transport_error",
     "write_failed",
+    "unexpected_status",  # any HTTP status outside 200 / 304 -- see below
     "decode_not_protobuf",
     "decode_parse_error",
     "decode_wrong_schema",
@@ -60,11 +61,31 @@ FAILURE_OUTCOMES = frozenset({
     "dropped",
     "transport_error",
     "write_failed",
+    "unexpected_status",
     "decode_not_protobuf",
     "decode_parse_error",
     "decode_wrong_schema",
     "decode_empty_body",
 })
+
+#: FOUND 2026-08-30, before Gate 5 was declared passed. The first cut of this
+#: taxonomy built the outcome for a non-200/304 response as
+#: f"unexpected_{record.status}" -- a fresh string per status code, never a
+#: member of OUTCOMES or FAILURE_OUTCOMES by construction. is_failure() returned
+#: False for it and pipeline_outcomes.failures never counted it, so a 429 or 500
+#: from the upstream feed would be written to Postgres correctly (the status
+#: column has the real code) but vanish from the report Gate 8's SLI 1 reads --
+#: the exact shape ADR 0010 exists to prevent, just for HTTP failures instead of
+#: queue drops. It never fired during the Gate 5 hour run (status_counts there
+#: was {200, 304} only), so the run's own numbers are unaffected; it is a real,
+#: latent bug rather than one that corrupted committed evidence.
+#:
+#: Fixed by collapsing every such status to the single closed outcome
+#: "unexpected_status" above, matching how decode_* outcomes work: the category
+#: is fixed and closed, and the specific number (like decode's specific error
+#: detail) lives in a separate column -- `status`, already recorded on every row.
+#: No information is lost; the taxonomy just stops growing one member per status
+#: code the internet has ever invented.
 
 DROP_OUTCOME = "dropped"
 DROP_REASON = "evicted from the bounded queue by a newer snapshot"
@@ -73,6 +94,24 @@ DROP_REASON = "evicted from the bounded queue by a newer snapshot"
 def is_failure(outcome: str) -> bool:
     """Does this outcome consume error budget? Gate 8's SLI 1 reads this."""
     return outcome in FAILURE_OUTCOMES
+
+
+def classify_fetch_outcome(status: int | None, has_error: bool) -> str:
+    """The outcome one HTTP fetch starts with, before the writer thread finalises
+    it to "persisted" or a decode_* outcome.
+
+    Extracted as a pure function -- no counters, no side effects -- so the branch
+    that silently fell outside the failure taxonomy (any status that is not 200
+    or 304) can be tested directly, the same way DropOldestQueue's drop path is
+    tested directly rather than only through a full run.
+    """
+    if has_error:
+        return "transport_error"
+    if status == 200:
+        return "queued"
+    if status == 304:
+        return "not_modified"
+    return "unexpected_status"
 
 
 def record_drop(store, fetch_id: int) -> str:
@@ -108,6 +147,7 @@ class Counters:
         self.requests = 0
         self.status_counts: dict[str, int] = {}
         self.transport_errors = 0
+        self.unexpected_statuses = 0
         self.decode_classes: dict[str, int] = {}
         self.false_200 = 0
         self.bodies = 0
@@ -239,21 +279,18 @@ def run(tenant, dsn: str, duration_s: float, depth: int, report_path: str) -> in
             if record.elapsed_ms is not None:
                 counters.fetch_ms.append(record.elapsed_ms)
 
-            if record.error:
+            outcome = classify_fetch_outcome(record.status, bool(record.error))
+            if outcome == "transport_error":
                 counters.transport_errors += 1
-                outcome = "transport_error"
-            elif record.status == 200:
+            elif outcome == "unexpected_status":
+                counters.unexpected_statuses += 1
+            elif outcome == "queued":
                 counters.bodies += 1
                 counters.body_bytes_total += record.body_bytes
                 counters.body_sizes.append(record.body_bytes)
                 if previous_body_hash and record.body_sha256 == previous_body_hash:
                     counters.false_200 += 1
                 previous_body_hash = record.body_sha256
-                outcome = "queued"
-            elif record.status == 304:
-                outcome = "not_modified"
-            else:
-                outcome = f"unexpected_{record.status}"
             if record.status is not None:
                 counters.bump(counters.status_counts, record.status)
 
@@ -414,13 +451,16 @@ def build_report(tenant, counters, churn, queue, started_at, ended_at,
                      "an assumption."),
         },
         "pipeline_outcomes": {
-            "failures": queue.dropped + counters.transport_errors + counters.write_failures
+            "failures": queue.dropped + counters.transport_errors
+                        + counters.unexpected_statuses + counters.write_failures
                         + sum(count for name, count in counters.decode_classes.items()
                               if is_failure(f"decode_{name}")),
             "failure_outcomes": sorted(FAILURE_OUTCOMES),
+            "unexpected_statuses": counters.unexpected_statuses,
             "note": ("Gate 8's SLI 1 reads this taxonomy. `dropped` is a failure by "
                      "ADR 0010, so a drop policy cannot launder errors out of the "
-                     "error budget."),
+                     "error budget. `unexpected_statuses` is broken out because it was "
+                     "the one silently missing from this sum until 2026-08-30."),
         },
         "backpressure": {
             "queue_depth": depth,

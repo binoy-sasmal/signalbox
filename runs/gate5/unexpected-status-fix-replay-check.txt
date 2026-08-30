@@ -1,0 +1,75 @@
+### environment ###
+captured_at: 2026-08-30T13:03:22Z
+commit: 36a742b95ccf0f8398dfe2d16dcf31694a849537 (plus the uncommitted unexpected_status fix)
+
+### what this is ###
+The unexpected_status fix does not invalidate the already-committed hour
+run evidence -- this replays that run's real HTTP statuses (queried
+directly from Postgres, not from the JSON report) through the FIXED
+classify_fetch_outcome(), and confirms the failures total is unchanged.
+
+Why this rather than a second hour-long run: the bug never manifested in
+this run's data (status_counts was {200, 304} only), so a rerun against
+the live feed would cost another hour and ~1300 requests to a volunteer
+service for no new evidence. What actually needs proving -- that the fix
+is correct for status codes THIS run never received -- is proven instead
+by the unit tests and their fail-first mutation proof
+(unexpected-status-fix-fail-first.txt), which construct those codes
+directly rather than waiting for the upstream to misbehave.
+
+===============================================================
+
+rows in this run's fetch table: 719
+outcome counts under the FIXED classifier, replayed over real data:
+  not_modified           478  failure=False
+  queued                 241  failure=False
+
+total failures under the fixed logic: 0
+committed report's pipeline_outcomes.failures: 0
+match: True
+
+Confirmed: this run's committed evidence is numerically identical under
+the fixed classifier. The fix changes behaviour only for status codes
+this run never received.
+
+===============================================================
+
+### the script that produced the above ###
+
+"""Replay the Gate 5 hour run's real HTTP statuses through the fixed
+classify_fetch_outcome(), to confirm the fix does not change that run's
+already-committed evidence -- it only changes behaviour for status codes that
+did not occur in it.
+"""
+import sys
+sys.path.insert(0, "services/ingest")
+import psycopg
+from ingest.run import classify_fetch_outcome, is_failure
+
+dsn = "postgresql://signalbox:local_dev_gate5_only@127.0.0.1:55432/signalbox"
+conn = psycopg.connect(dsn)
+cur = conn.cursor()
+cur.execute("select status, error from tenant_hsl_tripupdates.fetch order by id")
+rows = cur.fetchall()
+
+print(f"rows in this run's fetch table: {len(rows)}")
+outcomes = {}
+for status, error in rows:
+    outcome = classify_fetch_outcome(status, has_error=bool(error))
+    outcomes[outcome] = outcomes.get(outcome, 0) + 1
+
+print("outcome counts under the FIXED classifier, replayed over real data:")
+for outcome, count in sorted(outcomes.items()):
+    print(f"  {outcome:20} {count:5}  failure={is_failure(outcome)}")
+
+failures = sum(c for o, c in outcomes.items() if is_failure(o))
+print()
+print(f"total failures under the fixed logic: {failures}")
+print(f"committed report's pipeline_outcomes.failures: 0")
+print(f"match: {failures == 0}")
+assert failures == 0, "replay disagrees with the committed report -- investigate before proceeding"
+assert "unexpected_status" not in outcomes, "this run's data actually contained an unexpected status"
+print()
+print("Confirmed: this run's committed evidence is numerically identical under")
+print("the fixed classifier. The fix changes behaviour only for status codes")
+print("this run never received.")

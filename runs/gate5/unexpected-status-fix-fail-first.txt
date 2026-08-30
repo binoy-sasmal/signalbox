@@ -1,0 +1,99 @@
+### environment ###
+captured_at: 2026-08-30T13:02:29Z
+commit: 36a742b95ccf0f8398dfe2d16dcf31694a849537 (plus the uncommitted unexpected_status fix)
+Python 3.12.5
+
+### what this is ###
+Fail-first proof for the unexpected_status fix. Found 2026-08-30: any HTTP
+status outside 200/304/transport-error built an outcome string
+(f"unexpected_{status}") that could never be a member of the closed
+FAILURE_OUTCOMES set, so a 429/500/etc from the upstream feed vanished from
+pipeline_outcomes.failures -- the number Gate 8's SLI 1 reads.
+
+Same method as runs/gate5/tests-fail-first.txt: break the guarantee, watch
+the suite catch it, restore, confirm clean. A no-op detector is included
+because the first attempt at mutation 2 silently matched nothing -- the
+harness itself needed the same discipline it exists to enforce.
+
+===============================================================
+
+### control: unmutated suite ###
+----------------------------------------------------------------------
+Ran 58 tests in 0.851s
+
+OK
+
+### MUTATION: reproduce the original bug -- a fresh string per status code again
+--- suite result ---
+----------------------------------------------------------------------
+Ran 58 tests in 1.005s
+
+FAILED (failures=2)
+
+### MUTATION: remove unexpected_status from FAILURE_OUTCOMES's declared set (both places it appears -- OUTCOMES and FAILURE_OUTCOMES)
+--- suite result ---
+----------------------------------------------------------------------
+Ran 58 tests in 0.949s
+
+FAILED (failures=2)
+
+### MUTATION: stop adding unexpected_statuses into the report's failures sum, even though the taxonomy and counter both still exist
+--- suite result ---
+----------------------------------------------------------------------
+Ran 58 tests in 0.996s
+
+FAILED (failures=2)
+
+### final control: tree restored ###
+----------------------------------------------------------------------
+Ran 58 tests in 0.967s
+
+OK
+
+===============================================================
+
+### the script that produced the above ###
+
+#!/bin/sh
+set -u
+PY=.venv/Scripts/python.exe
+run_suite() { "$PY" -m unittest discover -s services/ingest/tests -p 'test_*.py' 2>&1 | tail -4; }
+
+mutate() {
+  cp "$1" "$1.orig"
+  before=$(md5sum "$1")
+  "$PY" - "$1" <<PYEOF
+import io,sys
+p=sys.argv[1]; s=io.open(p,encoding='utf-8').read()
+$2
+io.open(p,'w',encoding='utf-8',newline='\n').write(s)
+PYEOF
+  after=$(md5sum "$1")
+  echo "### MUTATION: $3"
+  if [ "$before" = "$after" ]; then
+    echo "!!! NO-OP: the replace() pattern did not match anything. Fix the harness. !!!"
+  fi
+  echo "--- suite result ---"
+  run_suite
+  mv "$1.orig" "$1"
+  echo
+}
+
+echo "### control: unmutated suite ###"
+run_suite
+echo
+
+mutate services/ingest/ingest/run.py \
+"s=s.replace('    return \"unexpected_status\"', '    return f\"unexpected_{status}\"')" \
+"reproduce the original bug -- a fresh string per status code again"
+
+mutate services/ingest/ingest/run.py \
+"s=s.replace('    \"unexpected_status\",\n', '')" \
+"remove unexpected_status from FAILURE_OUTCOMES's declared set (both places it appears -- OUTCOMES and FAILURE_OUTCOMES)"
+
+mutate services/ingest/ingest/run.py \
+"s=s.replace('            + counters.unexpected_statuses + counters.write_failures', '            + counters.write_failures')" \
+"stop adding unexpected_statuses into the report's failures sum, even though the taxonomy and counter both still exist"
+
+echo "### final control: tree restored ###"
+run_suite
