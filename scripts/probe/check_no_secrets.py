@@ -69,6 +69,19 @@ JSON_NUMBER = re.compile(r"-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?")
 TEXT_SUFFIXES = {
     ".json", ".jsonl", ".yaml", ".yml", ".md", ".toml", ".ini", ".cfg",
     ".tf", ".tfvars", ".hcl", ".py", ".sh", ".env", ".txt",
+    # .sql added 2026-08-30, when Gate 5 committed this repo's first .sql file
+    # and the scan reported "104 scanned, 1 skipped" -- the skipped one being
+    # the new schema. A DDL file is a natural home for a credential: CREATE
+    # ROLE ... PASSWORD, a connection string in a comment, a GRANT. Stage 2
+    # adds per-tenant roles, which is exactly that shape.
+    #
+    # This WIDENS coverage rather than exempting anything, so it is the safe
+    # direction of change -- but it is still a methodology change to the
+    # enforced gate, and it is declared as one rather than slipped in with a
+    # feature. The adversarial fixtures for it are in test_check_no_secrets.py
+    # and target the parser: what the rules accept in a .sql file, not what a
+    # careful author would have written there.
+    ".sql",
 }
 
 # Literal give-aways, checked anywhere in a committed text file. Both require a

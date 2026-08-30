@@ -552,6 +552,70 @@ applicable to each, with evidence strength recorded alongside the verdict.
 whether at least three feeds are usable and what their behaviour is, and that question is answered.
 Whether the ingest service can actually keep up with them is Gate 5.
 
+## Stage 1 — Gate 5, ingest service
+
+### Predictions, written and committed BEFORE the run — 2026-08-30
+
+**These are predictions, not thresholds.** Each is an extrapolation from Stage 0
+measurements, with its provenance named. A run that comes back away from one of these is a
+**finding to investigate, not a failure to fix by adjusting the number**. The predicted and
+the observed value are both kept, permanently, side by side. A prediction quietly edited to
+match a result is the failure this whole discipline exists to prevent.
+
+Written before the run for the same reason PLAN.md section 6.6 defined "usable" before any
+feed had been probed: so that nothing can be interpreted into passing afterwards.
+
+| # | Quantity | Prediction | Provenance |
+|---|---|---|---|
+| 1 | **Parse failure rate** | **0%** | 247 of 247 HSL bodies decoded in Stage 0 run 2, zero failures. Classified by nature (`not_protobuf` / `parse_error` / `wrong_schema` / `empty_body` / `valid_but_empty`), never collapsed into one rate. |
+| 2 | **Snapshot duplicate rate** (false-200s) | **~1.2%** of bodies | 3 of 247 in run 2. |
+| 3 | **Entity suppression rate**, steady state | **~71%** | 1 − 0.2879 median churn, recomputed on 240 consecutive run-2 snapshots under the corrected key. **Not the 75% first derived** — see the correction below. |
+| 4 | **Bytes saved by conditional requests**, at a 5s poll interval | **~66%** — about 250 MB transferred against a 776 MB counterfactual | 720 ticks/hour; a 15.0s cadence admits 240 generations, so ~240 bodies plus ~3 false-200s. Mean body 1,075,427 B, uncompressed. |
+| 5 | **Ticks skipped** | **~2 per hour (~0.3%)**, none losing more than one tick | 2 of 247 body-returning fetches exceeded 5s in run 2, none exceeded 5.5s. At ~240 bodies/hour that is 240 × 0.0081 ≈ 1.9. Poisson at λ=1.9 puts 0–5 inside an ordinary hour; **above that, fetch latency has changed**, which is the thing worth knowing. |
+| 6 | **Snapshots dropped** | **0** | A 2.4s fetch and ~1,300 entities against a 5s interval and depth 2. Non-zero is itself a finding. |
+| 7 | **Achieved poll interval** | **5.0s**, mean and median | Fixed-rate scheduling (ADR 0005). Under the probe's sleep-after-completion the same configuration gave a 5.17s median and a 6.15s mean. |
+
+**Prediction 4 is only meaningful against its stated poll interval**, and the interval is
+part of the claim rather than a hidden knob — the same treatment ADR 0002 gives the poll
+interval in `feed_freshness`. At a 15s interval against a 15s cadence the saving would be
+~0 by construction.
+
+#### The suppression prediction was corrected before the run, not after
+
+The first prediction was **75%**, from `median_churn_keyed_on_semantic_key: 0.250` in
+`runs/run2/analysis.json`. Building the service found that number to be an artefact.
+
+**HSL publishes no `trip_id` at all** — 0 of 1,348 entities in every snapshot checked. It
+identifies trips by GTFS-RT's other permitted form, `route_id` + `direction_id` +
+`start_date` + `start_time`. The Stage 0 analyser's semantic key is `(trip_id, start_date)`,
+so on this feed it collapses an entire snapshot into **one key per start_date — four keys for
+1,348 entities.**
+
+Every figure computed on that key inherits the collapse:
+
+| Keying | Distinct keys | Median churn | What it means |
+|---|---|---|---|
+| `(trip_id, start_date)` — Stage 0's | **4** | 0.2500 | one of four date-buckets changed |
+| `(route_id, direction_id, start_date, start_time)` | **1,348** | **0.2879** | ~29% of trips changed |
+| `FeedEntity.id` | 1,348 | **0.2879** | identical to the corrected key |
+
+The tell was always in the data: the old key's churn has a **p95 of 0.75** — three of four
+buckets — which is not a shape a real key over 1,348 entities produces. Recomputed over 240
+consecutive run-2 snapshots; see `runs/gate5/`.
+
+**Two consequences beyond the prediction.**
+
+The corrected semantic key and `FeedEntity.id` agree to four decimal places on this feed, so
+**the two keyings do not disagree here at all** — which is a cleaner result than Stage 0
+recorded, and reached for a different reason.
+
+And ADR 0004 section 4's `id_vs_semantic_persistence_ratio`, the statistic that declares
+`entity.id` stable, was computed for HSL as a ratio **against a denominator over four keys**.
+Its verdict of `stable` is corroborated by the corrected numbers above, but the evidence that
+produced it was degenerate. The other three feeds are unaffected: VBB, OVapi and
+`hsl_vehiclepositions` all populate the fields their keys use. **This is a defect in the key,
+not in the ratio method.**
+
 ## Still unmeasured
 
 - **`hsl_vehiclepositions` conditional-request behaviour** — needs sampling faster than its cadence

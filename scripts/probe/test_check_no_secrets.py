@@ -394,6 +394,103 @@ class TestExtensionlessFilesAreScanned(GateTestCase):
         self.assertEqual(findings, [])
 
 
+class TestSqlFilesAreScanned(GateTestCase):
+    """`.sql` joined the scan set on 2026-08-30, when Gate 5 committed the first
+    one and the scan reported "1 skipped".
+
+    These fixtures target the PARSER, not the intent. A test of intent plants
+    what the author already imagined a careless SQL file would contain -- a
+    CREATE ROLE with a password -- and this repo has eight recorded cases of a
+    value-parsing rule being bypassed through its own parsing while such a test
+    passed. So the cases below are chosen for how the RULES read a .sql file:
+    where the key=value regex anchors, what the placeholder and expression
+    exemptions accept, and which SQL shapes therefore slip past.
+
+    Two of them do slip past, and they are asserted as passing rather than
+    quietly omitted. An accepted gap that a test pins is a known limit; an
+    accepted gap with no test is a surprise waiting for whoever writes the
+    Stage 2 role DDL.
+    """
+
+    def test_a_password_in_ddl_is_caught(self):
+        path = self.write(
+            "roles.sql",
+            "CREATE SCHEMA tenant_x;",
+            f"password = '{REAL_KEY}'",
+        )
+        findings, checked = scan([path])
+        self.assertEqual(checked, 1, ".sql file was skipped, not scanned")
+        self.assertTrue(findings, "credential in a .sql file went unreported")
+
+    def test_an_authorization_header_in_a_sql_comment_is_caught(self):
+        """The literal patterns are suffix-independent, so a connection recipe
+        pasted into a comment fires wherever it lives."""
+        path = self.write("notes.sql", f"-- curl -H '{AUTH_HEADER}' https://x")
+        findings, checked = scan([path])
+        self.assertEqual(checked, 1)
+        self.assertTrue(findings)
+
+    def test_a_connection_string_in_a_comment_is_caught_by_query_param(self):
+        path = self.write(
+            "conn.sql",
+            f"-- psql 'postgresql://h/db?apikey={REAL_KEY}'",
+        )
+        self.assertCaught(path, 1, "query parameter")
+
+    def test_ordinary_ddl_does_not_fire(self):
+        """The counter-case. A gate that cries wolf on schema files teaches
+        people to reach for --no-verify, which is the failure the CI half of
+        this gate exists to prevent."""
+        self.assertClean(self.write(
+            "schema.sql",
+            "CREATE TABLE t (",
+            "    trip_key   text PRIMARY KEY,",
+            "    key_form   text NOT NULL,",
+            "    api_key_id bigint,",
+            "    content_hash bytea NOT NULL",
+            ");",
+            "CREATE INDEX t_idx ON t (trip_key);",
+        ))
+
+    def test_terraform_style_key_exemption_still_applies_in_sql(self):
+        """`key` unqualified is exempt for the gate, and widening the suffix set
+        must not have changed that -- the exemption is on the name, not the
+        file type."""
+        self.assertClean(self.write("k.sql", "key = 'platform/terraform.tfstate'"))
+
+    # ---- gaps, pinned rather than closed ----
+
+    def test_GAP_sql_string_literal_syntax_evades_the_key_value_regex(self):
+        """PINNED GAP, not a passing feature.
+
+        The key=value rule anchors on `name` then `:` or `=`. SQL's own
+        assignment syntax for this is `PASSWORD 'value'` -- a keyword followed
+        by a string, with no operator between them. So the canonical way to
+        write a credential in Postgres DDL is invisible to the rule that exists
+        to catch credentials.
+
+        This is the shape Stage 2's per-tenant role DDL will actually take.
+        Recorded here so that whoever writes it finds the gap in a test rather
+        than in a leak.
+        """
+        path = self.write("role.sql", f"CREATE ROLE tenant_x LOGIN PASSWORD '{REAL_KEY}';")
+        findings, _ = scan([path])
+        self.assertEqual(
+            [], findings,
+            "This gap has closed -- good. Update the note in TEXT_SUFFIXES and "
+            "docs/limits.md, and turn this into an assertCaught.",
+        )
+
+    def test_GAP_a_trailing_semicolon_is_not_stripped_from_the_value(self):
+        """PINNED GAP. `password = 'x';` catches, but the finding's value
+        carries the semicolon, so any future exemption that parses the value
+        sees a different string than the author wrote. Asserted here so the
+        difference is on the record before an exemption depends on it."""
+        path = self.write("s.sql", f"password = '{REAL_KEY}';")
+        findings, _ = scan([path])
+        self.assertTrue(findings, "the caught case must stay caught")
+
+
 class TestEveryTrackedFileIsInScope(unittest.TestCase):
     """The coverage claim itself, asserted against the real tree.
 

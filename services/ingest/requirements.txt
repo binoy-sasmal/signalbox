@@ -1,0 +1,8 @@
+# Observed, not asserted: the versions pip actually resolved on 2026-08-30 under
+# CPython 3.12, captured with `pip freeze`. Same convention as the Stage 0 probe,
+# and the same pinned versions where the dependency is shared.
+httpx==0.28.1
+gtfs-realtime-bindings==2.2.0
+protobuf==7.36.0
+PyYAML==6.0.3
+psycopg[binary]==3.3.4

@@ -1,0 +1,74 @@
+# HSL Helsinki — trip updates. The first tenant.
+#
+# SOURCE OF TRUTH. PLAN.md section 3 makes this file the single input consumed by
+# both Terraform (cloud-side resources) and, from Stage 2, an ArgoCD ApplicationSet.
+# At Gate 5 it has exactly one consumer -- the ingest service -- and no cluster.
+#
+# Every field below is either one of the six PLAN.md section 4 declares first-class
+# from day one, or a value the Gate 5 service actually reads. Nothing else.
+# Four of the six have no consumer yet; they are a schema commitment, not
+# speculative code, and two of them turned out to need shapes PLAN.md section 4
+# did not anticipate. Both are recorded as Gate 5 findings in docs/metrics.md.
+
+name: hsl_tripupdates
+jurisdiction: FI
+
+# Split, never a resolved URL. Some transit APIs authenticate by query parameter,
+# so a raw endpoint string is a place a credential can land in a committed file.
+# The structural credential check enforces this shape on every committed file.
+base_url: https://realtime.hsl.fi/realtime/trip-updates/v2/hsl
+query: {}
+
+# --- PLAN.md section 4: the six first-class fields ---
+
+# FINDING: the field as specified conflates two different limits, and HSL has only
+# one of them. `documented` is the upstream's published limit -- HSL publishes none,
+# so it is null rather than a guessed number. `self_imposed` is our own ceiling,
+# carried over from the Stage 0 probe. CH's "2 queries/minute" is a documented
+# limit; this feed has only a self-imposed one, and a single scalar field could not
+# have said which kind it was holding.
+rate_limit:
+  documented: null
+  self_imposed:
+    requests: 15
+    window_s: 60
+
+# Points at a secret, never at a value. HSL needs none: verified 2026-08-28 by
+# HEAD against the endpoint, 200 with no auth challenge. api.digitransit.fi does
+# require a subscription key, but its GTFS-RT endpoints are deprecated and this
+# replacement host needs none.
+auth_ref: null
+
+licence: CC-BY-4.0
+
+# FINDING: this value is a template, not a literal. HSL's terms require the year
+# of delivery -- "(e.g. (c) HSL 2016)" -- so the string goes stale annually, while
+# every other tenant's attribution recorded so far is fixed. metrics.md flagged
+# this for the Stage 2 schema; Gate 5 is the first thing that has to write the
+# field, so the placeholder is here rather than a literal that is wrong next year.
+# Nothing renders it at Gate 5: we neither redistribute nor display the data.
+attribution: "(c) HSL {year_of_delivery}"
+
+# Measured, not documented. Verdict `generation` on 2 of 5 available tests
+# (run 2, 2026-08-28). Gate 8's feed_freshness SLO is applicable to this tenant.
+header_timestamp_trust: generation
+
+# Measured. READ BY THE GATE 5 SERVICE: ADR 0010's drop-oldest backpressure is
+# only correct for FULL_DATASET, and the service refuses to start on DIFFERENTIAL
+# rather than inheriting a policy chosen for a different feed shape.
+incrementality: FULL_DATASET
+
+# --- what the Gate 5 ingest service reads ---
+
+# Fixed-rate ticks, ADR 0005. NOT the cadence: the feed regenerates every 15.0s
+# (stdev 0.00s, n=241) and we deliberately oversample it ~3x. At a 15s interval
+# nearly every poll would get new content and "bytes saved by conditional
+# requests" would be ~0 by construction -- the Nyquist trap from
+# stage0-findings.md section 2, applied forward. HSL's own Cache-Control is
+# max-age=5, so 5s is the server's suggestion, not ours. 12 req/min against the
+# 15 req/min self-imposed ceiling.
+poll_interval_s: 5
+
+# Schema per tenant, PLAN.md section 9. Named here rather than defaulting to
+# `public` so the isolation model holds from the first tenant.
+db_schema: tenant_hsl_tripupdates

@@ -1,0 +1,169 @@
+### environment ###
+captured_at: 2026-08-30T07:59:39Z
+commit: 1e9ac217f958869094c82e429c1ce9341004a8be (plus the uncommitted Gate 5 working tree)
+Python 3.12.5
+
+### what this is ###
+The arithmetic behind the seven Gate 5 predictions in docs/metrics.md,
+and the recomputation that corrected one of them from 75% to 71%.
+
+Run BEFORE the verification run, from Stage 0 artefacts only. No network.
+Committed before the run for the same reason PLAN.md section 6.6 defined
+'usable' before any feed had been probed.
+
+===============================================================
+
+### inputs, all from Stage 0 run 2 ###
+HSL requests            : 590
+bodies (200)            : 247
+mean body bytes         : 1,075,427  (uncompressed)
+cadence                 : 15.0s, stdev 0.00 over 241 distinct stamps
+fetch ms (200)          : p50 2391  max 5093
+
+### prediction 4 -- bytes saved at a 5s poll interval ###
+ticks in an hour        : 720
+generations in an hour  : 240   <- the floor on bodies
++ false-200 rate        : 0.0121
+predicted bodies        : 242.9
+transferred             : 261 MB
+counterfactual (no validators): 774 MB
+bytes saved             : 0.6626  (513 MB)
+
+### prediction 5 -- skipped ticks ###
+body fetches over 5.0s   : 2 of 247 = 0.0081
+max fetch ms            : 5093  <- under 2 intervals, so one tick each
+expected skips per hour : 1.9
+
+### prediction 3 -- entity suppression, and the key that was wrong ###
+
+consecutive distinct snapshots analysed: 241
+entities in a snapshot                 : 1348
+of which carry a trip_id               : 0   <- this is the defect
+
+keying                                  median keys  median churn  p95 churn
+(trip_id, start_date)   [Stage 0]                 4        0.2500     0.7500
+(route,dir,date,time)   [corrected]           1,261        0.2879     0.3769
+FeedEntity.id                                 1,261        0.2879     0.3769
+
+suppression implied by the corrected key: 0.7121
+suppression implied by the Stage 0 key  : 0.7500  <- artefact
+
+The old key's p95 of 0.75 is three of four date-buckets changing. A real
+key over 1,348 entities does not produce that shape, and it is the tell
+that was visible in the Stage 0 output all along.
+
+===============================================================
+
+### the script that produced the above ###
+
+"""The Gate 5 predictions, and the recomputation that corrected one of them.
+
+Reads Stage 0 artefacts only. No network. Run BEFORE the verification run.
+"""
+import json, os, statistics
+from google.transit import gtfs_realtime_pb2
+
+CADENCE = 15.0
+INTERVAL = 5.0
+HOUR = 3600.0
+
+obs = [json.loads(l) for l in open('runs/run2/observations.jsonl', encoding='utf-8')]
+hsl = [o for o in obs if o['feed'] == 'hsl_tripupdates']
+bodies = [o for o in hsl if o['status'] == 200]
+sizes = [o['body_bytes_wire'] for o in bodies]
+elapsed = [o['elapsed_ms'] for o in bodies]
+
+print("### inputs, all from Stage 0 run 2 ###")
+print(f"HSL requests            : {len(hsl)}")
+print(f"bodies (200)            : {len(bodies)}")
+print(f"mean body bytes         : {statistics.mean(sizes):,.0f}  (uncompressed)")
+print(f"cadence                 : {CADENCE}s, stdev 0.00 over 241 distinct stamps")
+print(f"fetch ms (200)          : p50 {statistics.median(elapsed):.0f}  max {max(elapsed):.0f}")
+print()
+
+print("### prediction 4 -- bytes saved at a 5s poll interval ###")
+ticks = HOUR / INTERVAL
+generations = HOUR / CADENCE
+false_200 = 3 / len(bodies)
+predicted_bodies = generations * (1 + false_200)
+mean_body = statistics.mean(sizes)
+transferred = predicted_bodies * mean_body
+counterfactual = ticks * mean_body
+print(f"ticks in an hour        : {ticks:.0f}")
+print(f"generations in an hour  : {generations:.0f}   <- the floor on bodies")
+print(f"+ false-200 rate        : {false_200:.4f}")
+print(f"predicted bodies        : {predicted_bodies:.1f}")
+print(f"transferred             : {transferred/1e6:,.0f} MB")
+print(f"counterfactual (no validators): {counterfactual/1e6:,.0f} MB")
+print(f"bytes saved             : {1 - transferred/counterfactual:.4f}  "
+      f"({(counterfactual-transferred)/1e6:,.0f} MB)")
+print()
+
+print("### prediction 5 -- skipped ticks ###")
+over = sum(1 for e in elapsed if e > INTERVAL * 1000)
+print(f"body fetches over {INTERVAL}s   : {over} of {len(bodies)} = {over/len(bodies):.4f}")
+print(f"max fetch ms            : {max(elapsed):.0f}  <- under 2 intervals, so one tick each")
+print(f"expected skips per hour : {generations * over/len(bodies):.1f}")
+print()
+
+print("### prediction 3 -- entity suppression, and the key that was wrong ###")
+print()
+
+def payload(e):
+    c = gtfs_realtime_pb2.FeedEntity(); c.CopyFrom(e); c.id = ""
+    return c.SerializeToString(deterministic=True)
+
+def churn(prev, cur):
+    union = set(prev) | set(cur)
+    if not union: return None
+    added = len(set(cur) - set(prev)); removed = len(set(prev) - set(cur))
+    mod = sum(1 for k in set(prev) & set(cur) if prev[k] != cur[k])
+    return (added + removed + mod) / len(union)
+
+seq = []
+for o in hsl:
+    if o.get('probe_action') != 'scheduled' or not o.get('body_sha256'): continue
+    p = f"runs/run2/blobs/{o['body_sha256']}.pb"
+    if os.path.exists(p) and (not seq or seq[-1] != p): seq.append(p)
+
+print(f"consecutive distinct snapshots analysed: {len(seq)}")
+first = gtfs_realtime_pb2.FeedMessage()
+first.ParseFromString(open(seq[0], 'rb').read())
+have_trip_id = sum(1 for e in first.entity if e.trip_update.trip.trip_id)
+print(f"entities in a snapshot                 : {len(first.entity)}")
+print(f"of which carry a trip_id               : {have_trip_id}   <- this is the defect")
+print()
+
+prev = {'old': None, 'new': None, 'id': None}
+series = {'old': [], 'new': [], 'id': []}
+distinct = {'old': [], 'new': [], 'id': []}
+for p in seq:
+    m = gtfs_realtime_pb2.FeedMessage(); m.ParseFromString(open(p, 'rb').read())
+    maps = {'old': {}, 'new': {}, 'id': {}}
+    for e in m.entity:
+        t = e.trip_update.trip; pl = payload(e)
+        maps['old'][(t.trip_id, t.start_date)] = pl
+        maps['new'][(t.route_id, t.direction_id, t.start_date, t.start_time)] = pl
+        maps['id'][e.id] = pl
+    for k in maps:
+        distinct[k].append(len(maps[k]))
+        if prev[k] is not None:
+            v = churn(prev[k], maps[k])
+            if v is not None: series[k].append(v)
+        prev[k] = maps[k]
+
+labels = {'old': '(trip_id, start_date)   [Stage 0]',
+          'new': '(route,dir,date,time)   [corrected]',
+          'id':  'FeedEntity.id'}
+print(f"{'keying':38} {'median keys':>12} {'median churn':>13} {'p95 churn':>10}")
+for k in ('old', 'new', 'id'):
+    o = sorted(series[k])
+    print(f"{labels[k]:38} {statistics.median(distinct[k]):>12,.0f} "
+          f"{statistics.median(series[k]):>13.4f} {o[int(.95*len(o))]:>10.4f}")
+print()
+print(f"suppression implied by the corrected key: {1-statistics.median(series['new']):.4f}")
+print(f"suppression implied by the Stage 0 key  : {1-statistics.median(series['old']):.4f}  <- artefact")
+print()
+print("The old key's p95 of 0.75 is three of four date-buckets changing. A real")
+print("key over 1,348 entities does not produce that shape, and it is the tell")
+print("that was visible in the Stage 0 output all along.")

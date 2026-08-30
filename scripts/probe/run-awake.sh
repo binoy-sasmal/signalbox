@@ -4,6 +4,13 @@
 #
 #     sh scripts/probe/run-awake.sh scripts/probe/config.run2.yaml
 #
+# With a command after the config, it runs that instead of the poller. Gate 5's
+# ingest run needs the same protection for the same reason, and copying forty
+# lines of powercfg handling -- whose two gotchas below were both found the hard
+# way -- into a second file would be two places to get it wrong:
+#
+#     sh scripts/probe/run-awake.sh tenants/hsl_tripupdates.yaml #         .venv/Scripts/python.exe -m ingest.run ...
+#
 # Why this exists: run 2 was voided when the machine slept for 56 of 60
 # minutes. SetThreadExecutionState, which the poller asserts from inside the
 # process, prevents idle sleep but did not hold -- so the setting is changed at
@@ -23,7 +30,8 @@
 
 set -e
 
-CONFIG="${1:?usage: run-awake.sh <config.yaml>}"
+CONFIG="${1:?usage: run-awake.sh <config.yaml> [command...]}"
+shift
 PY="${PY:-.venv/Scripts/python.exe}"
 POWERCFG="$SYSTEMROOT/System32/powercfg.exe"
 
@@ -66,4 +74,8 @@ if [ "$(read_timeout AC)" != "00000000" ] || [ "$(read_timeout DC)" != "00000000
 fi
 echo "[power] sleep disabled for the duration (verified)"
 
-"$PY" scripts/probe/poll.py "$CONFIG"
+if [ "$#" -gt 0 ]; then
+    "$@"
+else
+    "$PY" scripts/probe/poll.py "$CONFIG"
+fi

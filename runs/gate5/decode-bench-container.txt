@@ -1,0 +1,67 @@
+### environment ###
+captured_at: 2026-08-30T07:58:21Z
+commit: 1e9ac217f958869094c82e429c1ce9341004a8be (plus the uncommitted Gate 5 working tree)
+host: Windows AMD64, Docker Desktop 29.6.1
+image: python:3.12-slim@sha256:09f7da3bc104798d0afb40bc08d23ab2da20a76130cec1f2ef170848f5d85217
+
+### what this is ###
+The memory sizing term PLAN.md section 7 names:
+  single-message decode peak x queue depth x safety factor.
+
+It is measured here rather than taken from Stage 0 because the Stage 0
+field does not hold that quantity -- it reports 2.14 GB for VBB, whose
+bodies decompress to 9 MB. See runs/stage0-corrections/.
+
+The instrument is RSS, not tracemalloc, and the tracemalloc column is
+carried alongside to keep the reason visible: protobuf's upb runtime
+allocates its arena in C++, so tracemalloc reports ~240 bytes for
+decoding megabytes. Both numbers, same decode, same process.
+
+Inputs are three real Stage 0 payloads, one per feed. They are under
+runs/gate5/blobs/ and gitignored, like every other captured payload.
+
+===============================================================
+
+### environment ###
+python:   3.12.14
+protobuf: upb implementation
+platform: Linux x86_64
+
+ARCHITECTURE IS NOT CONTROLLED FOR. This is a Linux container, which
+is what PLAN.md section 7 asks for, but the node is arm64 and this is
+x86_64. The remaining confound is named, not closed.
+
+### single-message decode, RSS delta over 5 decodes ###
+
+  body bytes  entities   RSS median          min          max  x body  tracemalloc
+   1,164,198     1,348    6,287,360    6,225,920    6,324,224    5.4x          244
+   5,378,503    10,988   24,424,448   24,424,448   24,424,448    4.5x          236
+   9,421,173     8,699   31,842,304   31,842,304   36,827,136    3.4x          236
+
+ru_maxrss (whole process high-water): 65,163,264 bytes
+
+### the sizing term ###
+
+single-message decode peak = 31,842,304 bytes (31.8 MB)
+  x queue depth 2                      (ADR 0010)
+  x safety factor 2
+  = 127,369,216 bytes (127 MB) before the interpreter's own floor
+
+This is an INPUT to a Gate 6 memory request, not the request itself,
+and PLAN.md section 7 corrects it at Gate 7 from observed
+container_memory_working_set_bytes. It does not include the
+interpreter, httpx, psycopg or the current-state working set.
+
+===============================================================
+
+### reading this for the HSL tenant specifically ###
+
+The 'sizing term' block above takes the WORST of the three feeds (VBB,
+31.8 MB) because a shared node must survive its largest tenant. Gate 5
+and Gate 6 run HSL alone, whose decode peak is 6.29 MB:
+
+  6,287,360 x 2 (queue depth) x 2 (safety) = 25,149,440 bytes (25 MB)
+
+Both figures are recorded. Which one sizes a pod depends on which
+tenants share it, and that is a Gate 6 decision with a second tenant in
+front of it, not a Gate 5 one.

@@ -1,0 +1,31 @@
+# Local Postgres for Gate 5. A development dependency, not a platform component:
+# the cluster's Postgres is owned by ArgoCD through an operator (ADR 0003), and
+# nothing here anticipates that.
+#
+# Pinned by digest, per CLAUDE.md. The tag is carried alongside for readability
+# only -- the digest is what is resolved.
+#
+# NO CREDENTIAL IS COMMITTED, not even a throwaway local one. The password comes
+# from the environment and has no default: `${VAR:?message}` makes compose refuse
+# to start rather than silently substituting an empty string.
+#
+# Worth stating why, since a local dev password looks harmless. A literal here
+# IS caught by the structural credential check -- verified by running the check
+# against both shapes (docs/metrics.md, Gate 5 observations). What is not caught
+# is the file before it is tracked: the check walks tracked files, so a local
+# run over an untracked new file scans nothing and still prints "passed". That
+# is the .gitignore note's "STILL TRUE" limitation, met in practice.
+services:
+  postgres:
+    image: postgres:17.6-alpine@sha256:ef257d85f76e48da1c64832459b59fcaba1a4dac97bf5d7450c77753542eee94
+    environment:
+      POSTGRES_USER: signalbox
+      POSTGRES_PASSWORD: ${SIGNALBOX_PG_PASSWORD:?set SIGNALBOX_PG_PASSWORD before starting}
+      POSTGRES_DB: signalbox
+    ports:
+      - "55432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U signalbox -d signalbox"]
+      interval: 2s
+      timeout: 3s
+      retries: 30

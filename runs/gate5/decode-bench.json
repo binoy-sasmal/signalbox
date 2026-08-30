@@ -1,0 +1,36 @@
+{
+ "results": [
+  {
+   "path": "hsl_tripupdates.pb",
+   "body_bytes": 1164198,
+   "entities": 1348,
+   "rss_delta_median": 6287360,
+   "rss_delta_min": 6225920,
+   "rss_delta_max": 6324224,
+   "rss_per_body_byte": 5.4,
+   "tracemalloc_peak": 244
+  },
+  {
+   "path": "ovapi_tripupdates.pb",
+   "body_bytes": 5378503,
+   "entities": 10988,
+   "rss_delta_median": 24424448,
+   "rss_delta_min": 24424448,
+   "rss_delta_max": 24424448,
+   "rss_per_body_byte": 4.54,
+   "tracemalloc_peak": 236
+  },
+  {
+   "path": "vbb.pb",
+   "body_bytes": 9421173,
+   "entities": 8699,
+   "rss_delta_median": 31842304,
+   "rss_delta_min": 31842304,
+   "rss_delta_max": 36827136,
+   "rss_per_body_byte": 3.38,
+   "tracemalloc_peak": 236
+  }
+ ],
+ "machine": "x86_64",
+ "python": "3.12.14 (main, Aug 25 2026, 01:17:55) [GCC 14.2.0]"
+}

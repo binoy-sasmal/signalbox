@@ -1,0 +1,144 @@
+### environment ###
+captured_at: 2026-08-30T07:56:14Z
+commit: 1e9ac217f958869094c82e429c1ce9341004a8be (plus the uncommitted Gate 5 working tree this verifies)
+Python 3.12.5
+
+### what this is ###
+Every gate Gate 5 adds, verified by making it FAIL rather than by watching
+it pass. A test that only ever passes and a test that cannot fail look
+identical from outside -- the method this repo recorded at review log row 5
+and has applied to every gate added in response to a finding since.
+
+Each block breaks one guarantee in the source, runs the whole suite, and
+restores the file. The controls at the top and bottom are what make the
+middle readable: an unmutated suite that passes before and after.
+
+The first mutation is the defect this gate actually found on live data --
+the (trip_id, start_date) dedup key, which mapped 1,348 HSL entities onto
+4 rows and reported 99.5% suppression. It is reproduced here as a
+regression, not as a hypothetical.
+
+===============================================================
+
+### control: unmutated suite ###
+----------------------------------------------------------------------
+Ran 46 tests in 1.004s
+
+OK
+
+### MUTATION: revert the dedup key to (trip_id, start_date) -- the bug this gate found
+--- suite result ---
+----------------------------------------------------------------------
+Ran 46 tests in 0.880s
+
+FAILED (failures=4)
+
+### MUTATION: disable the key-collapse guard entirely
+--- suite result ---
+----------------------------------------------------------------------
+Ran 46 tests in 1.101s
+
+FAILED (failures=2)
+
+### MUTATION: invert the drop policy to drop-NEWEST
+--- suite result ---
+----------------------------------------------------------------------
+Ran 46 tests in 0.903s
+
+FAILED (failures=2)
+
+### MUTATION: stop counting drops
+--- suite result ---
+----------------------------------------------------------------------
+Ran 46 tests in 1.027s
+
+FAILED (failures=4)
+
+### MUTATION: remove 'dropped' from the failure set -- the error-budget laundering ADR 0010 exists to stop
+--- suite result ---
+----------------------------------------------------------------------
+Ran 46 tests in 1.021s
+
+FAILED (failures=3)
+
+### MUTATION: stop refusing a DIFFERENTIAL feed
+--- suite result ---
+----------------------------------------------------------------------
+Ran 46 tests in 0.958s
+
+FAILED (failures=1)
+
+### MUTATION: stop skipping missed ticks
+--- suite result ---
+----------------------------------------------------------------------
+Ran 46 tests in 0.970s
+
+FAILED (failures=3)
+
+### final control: tree restored ###
+----------------------------------------------------------------------
+Ran 46 tests in 1.044s
+
+OK
+
+===============================================================
+
+### the script that produced the above ###
+
+#!/bin/sh
+# Prove each new gate can fail, by breaking the thing it guards.
+# A test that only ever passes and a test that cannot fail look identical from
+# outside (review log row 5).
+set -u
+PY=.venv/Scripts/python.exe
+run_suite() { "$PY" -m unittest discover -s services/ingest/tests -p 'test_*.py' 2>&1 | tail -4; }
+
+mutate() {  # $1=file $2=python-replacement-script $3=label
+  cp "$1" "$1.orig"
+  "$PY" - "$1" <<PYEOF
+import io,sys
+p=sys.argv[1]; s=io.open(p,encoding='utf-8').read()
+$2
+io.open(p,'w',encoding='utf-8',newline='\n').write(s)
+PYEOF
+  echo "### MUTATION: $3"
+  echo "--- suite result ---"
+  run_suite
+  mv "$1.orig" "$1"
+  echo
+}
+
+echo "### control: unmutated suite ###"
+run_suite
+echo
+
+mutate services/ingest/ingest/decode.py \
+"s=s.replace('    if trip.trip_id:\n        return f\"trip:{trip.trip_id}@{trip.start_date}\", \"trip_id\"\n', '    if True:\n        return f\"trip:{trip.trip_id}@{trip.start_date}\", \"trip_id\"\n')" \
+"revert the dedup key to (trip_id, start_date) -- the bug this gate found"
+
+mutate services/ingest/ingest/decode.py \
+"s=s.replace('    if ratio < tolerance:', '    if False:')" \
+"disable the key-collapse guard entirely"
+
+mutate services/ingest/ingest/dropqueue.py \
+"s=s.replace('evicted = self._items.popleft()', 'evicted = self._items.pop()')" \
+"invert the drop policy to drop-NEWEST"
+
+mutate services/ingest/ingest/dropqueue.py \
+"s=s.replace('                self.dropped += 1\n', '')" \
+"stop counting drops"
+
+mutate services/ingest/ingest/run.py \
+"s=s.replace('FAILURE_OUTCOMES = frozenset({\n    \"dropped\",', 'FAILURE_OUTCOMES = frozenset({')" \
+"remove 'dropped' from the failure set -- the error-budget laundering ADR 0010 exists to stop"
+
+mutate services/ingest/ingest/config.py \
+"s=s.replace('    if raw[\"incrementality\"] != SUPPORTED_INCREMENTALITY:', '    if False:')" \
+"stop refusing a DIFFERENTIAL feed"
+
+mutate services/ingest/ingest/poller.py \
+"s=s.replace('        while target <= now:', '        while False:')" \
+"stop skipping missed ticks"
+
+echo "### final control: tree restored ###"
+run_suite

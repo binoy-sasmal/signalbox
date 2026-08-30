@@ -1,0 +1,34 @@
+# Gate 5 ingest service tests.
+#
+# In CI, not only locally, for the reason this repo applies everywhere else: a
+# local run is fast feedback and only the enforced gate is enforcement. That
+# argument is load-bearing for one test in particular. The Gate 5 verification
+# run cannot exercise the drop path -- expected drops are zero -- so
+# test_drop_is_a_failure.py is the ONLY thing standing between ADR 0010's rule
+# and Gate 8's error budget, and a rule guarded by a suite nobody runs is not
+# guarded.
+#
+# No database and no network: every test here is a unit test over fixtures.
+# Postgres behaviour is exercised by the Gate 5 verification run, whose evidence
+# is under runs/gate5/.
+
+name: ingest-check
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  ingest-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.12'
+      - run: pip install -r services/ingest/requirements.txt
+      - name: Ingest service tests
+        run: python3 -m unittest discover -s services/ingest/tests -p 'test_*.py' -v
